@@ -37,6 +37,17 @@ other character/string) or one of the following **named shortcuts**:
 | `(tm)`, `tm`, `trademark`       | ™      |
 | `(sm)`, `sm`, `servicemark`     | ℠      |
 
+### Superscript (per word)
+
+Append `| sup` to a line to wrap that symbol in a `<sup>` tag — set
+per mapping, so you can mix superscript and normal symbols:
+
+```
+ProcessWire = (tm) | sup     →  ProcessWire<sup>™</sup>
+Frameless   = ® | sup        →  Frameless<sup>®</sup>
+ACME        = ©              →  ACME©
+```
+
 ### Options
 
 - **Match whole words only** – only complete words are matched (so `ACME`
@@ -50,9 +61,11 @@ other character/string) or one of the following **named shortcuts**:
 ## Notes
 
 - The formatter never appends a symbol twice. If a word is already followed
-  (optionally after whitespace) by *any* known symbol — the standard marks
-  ©, ®, ™, ℠ or any of your configured symbols — it is left unchanged. So
-  `Frameless©` never becomes `Frameless©©` or `Frameless©®`.
+  by *any* known symbol — the standard marks ©, ®, ™, ℠ or any of your
+  configured symbols — it is left unchanged. The check tolerates surrounding
+  whitespace and an existing `<sup>` wrapper, so `Frameless©`,
+  `Frameless<sup>®</sup>` and `Frameless ®` are all recognised and never get
+  a second symbol.
 - When matching is case-insensitive, the original casing of the matched word
   is preserved.
 
