@@ -49,8 +49,10 @@ other character/string) or one of the following **named shortcuts**:
 
 ## Notes
 
-- The formatter never appends a symbol twice: if a word is already directly
-  followed by its symbol, it is left unchanged.
+- The formatter never appends a symbol twice. If a word is already followed
+  (optionally after whitespace) by *any* known symbol — the standard marks
+  ©, ®, ™, ℠ or any of your configured symbols — it is left unchanged. So
+  `Frameless©` never becomes `Frameless©©` or `Frameless©®`.
 - When matching is case-insensitive, the original casing of the matched word
   is preserved.
 

@@ -23,7 +23,7 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Word Symbols',
-			'version' => 100,
+			'version' => 101,
 			'summary' => 'Appends configurable symbols (©, ®, ™, ℠ …) to configurable words during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'copyright',
@@ -113,17 +113,32 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 		$flags = 'u'; // unicode
 		if(!$this->caseSensitive) $flags .= 'i';
 
+		// Build a lookahead alternation of every symbol that must never be
+		// duplicated: the standard marks plus all configured symbols. This
+		// prevents both "Frameless©©" (same symbol) and "Frameless©®"
+		// (a different symbol already present).
+		$known = array('©', '®', '™', '℠');
+		foreach($mappings as $sym) $known[] = $sym;
+		$known = array_unique($known);
+		// longest first so a multi-character symbol matches before a substring of it
+		usort($known, function($a, $b) {
+			return mb_strlen($b) - mb_strlen($a);
+		});
+		$symbolsAlt = implode('|', array_map(function($s) {
+			return preg_quote($s, '/');
+		}, $known));
+
 		foreach($mappings as $word => $symbol) {
 
 			$quotedWord = preg_quote($word, '/');
-			$quotedSymbol = preg_quote($symbol, '/');
 
 			// word boundaries that are unicode-aware (\b is not reliable for é, ö …)
 			$before = $this->wholeWord ? '(?<![\p{L}\p{N}_])' : '';
 			$after = $this->wholeWord ? '(?![\p{L}\p{N}_])' : '';
 
-			// negative lookahead so we never append the symbol twice
-			$pattern = '/' . $before . $quotedWord . $after . '(?!' . $quotedSymbol . ')/' . $flags;
+			// negative lookahead: skip if the word is already followed (optionally
+			// after whitespace) by any known symbol, so none is ever added twice
+			$pattern = '/' . $before . $quotedWord . $after . '(?!\s*(?:' . $symbolsAlt . '))/' . $flags;
 
 			$str = preg_replace_callback($pattern, function($m) use ($symbol) {
 				return $m[0] . $symbol;
