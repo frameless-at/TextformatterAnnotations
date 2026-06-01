@@ -23,7 +23,7 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Word Symbols',
-			'version' => 102,
+			'version' => 103,
 			'summary' => 'Appends configurable symbols (©, ®, ™, ℠ …) to configurable words during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'copyright',
@@ -125,40 +125,63 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 		$flags = 'u'; // unicode
 		if(!$this->caseSensitive) $flags .= 'i';
 
-		// Build a lookahead alternation of every symbol that must never be
-		// duplicated: the standard marks plus all configured symbols. This
-		// prevents both "Frameless©©" (same symbol) and "Frameless©®"
-		// (a different symbol already present).
+		// Every symbol that counts as "already present": the standard marks
+		// plus all configured symbols. Longest first so a multi-character
+		// symbol matches before a substring of it.
 		$known = array('©', '®', '™', '℠');
 		foreach($mappings as $m) $known[] = $m['symbol'];
 		$known = array_unique($known);
-		// longest first so a multi-character symbol matches before a substring of it
 		usort($known, function($a, $b) {
 			return mb_strlen($b) - mb_strlen($a);
 		});
-		$symbolsAlt = implode('|', array_map(function($s) {
-			return preg_quote($s, '/');
-		}, $known));
+
+		// word boundaries that are unicode-aware (\b is not reliable for é, ö …)
+		$before = $this->wholeWord ? '(?<![\p{L}\p{N}_])' : '';
+		$after = $this->wholeWord ? '(?![\p{L}\p{N}_])' : '';
 
 		foreach($mappings as $word => $m) {
 
 			$symbol = $m['symbol'];
-			$replacement = $m['sup'] ? '<sup>' . $symbol . '</sup>' : $symbol;
 			$quotedWord = preg_quote($word, '/');
+			$quotedSymbol = preg_quote($symbol, '/');
 
-			// word boundaries that are unicode-aware (\b is not reliable for é, ö …)
-			$before = $this->wholeWord ? '(?<![\p{L}\p{N}_])' : '';
-			$after = $this->wholeWord ? '(?![\p{L}\p{N}_])' : '';
+			if($m['sup']) {
+				// Superscript mapping. Upgrade a bare occurrence of *this* symbol
+				// to the <sup> form, but leave an existing <sup> wrapper and any
+				// *other* symbol untouched (so we never produce "<sup>®</sup>©").
+				$others = array_values(array_filter($known, function($s) use($symbol) {
+					return $s !== $symbol;
+				}));
+				$skipOther = '';
+				if(!empty($others)) {
+					$otherAlt = implode('|', array_map(function($s) {
+						return preg_quote($s, '/');
+					}, $others));
+					$skipOther = '(?!\s*(?:' . $otherAlt . '))';
+				}
+				// (word)(boundary)(not already sup-wrapped)(no other symbol)(absorb own bare symbol?)
+				$pattern = '/' . $before . '(' . $quotedWord . ')' . $after
+					. '(?!\s*<sup)' . $skipOther . '(?:\s*' . $quotedSymbol . ')?/' . $flags;
 
-			// negative lookahead: skip if the word is already followed by any known
-			// symbol — optionally after whitespace and/or inside a <sup> wrapper —
-			// so none is ever added twice (handles both "©" and "<sup>©</sup>")
-			$dupCheck = '(?!\s*(?:<sup[^>]*>\s*)?(?:' . $symbolsAlt . '))';
-			$pattern = '/' . $before . $quotedWord . $after . $dupCheck . '/' . $flags;
+				$str = preg_replace_callback($pattern, function($matches) use ($symbol) {
+					return $matches[1] . '<sup>' . $symbol . '</sup>';
+				}, $str, $limit);
 
-			$str = preg_replace_callback($pattern, function($matches) use ($replacement) {
-				return $matches[0] . $replacement;
-			}, $str, $limit);
+			} else {
+				// Plain mapping. Skip if the word is already followed by any known
+				// symbol — optionally after whitespace and/or inside a <sup>
+				// wrapper — so none is ever added twice (handles "©" and
+				// "<sup>©</sup>" alike).
+				$symbolsAlt = implode('|', array_map(function($s) {
+					return preg_quote($s, '/');
+				}, $known));
+				$dupCheck = '(?!\s*(?:<sup[^>]*>\s*)?(?:' . $symbolsAlt . '))';
+				$pattern = '/' . $before . $quotedWord . $after . $dupCheck . '/' . $flags;
+
+				$str = preg_replace_callback($pattern, function($matches) use ($symbol) {
+					return $matches[0] . $symbol;
+				}, $str, $limit);
+			}
 		}
 	}
 

@@ -48,6 +48,12 @@ Frameless   = ® | sup        →  Frameless<sup>®</sup>
 ACME        = ©              →  ACME©
 ```
 
+For a `| sup` mapping, an occurrence that already carries the **bare** symbol
+(without the wrapper) is upgraded to the superscript form — e.g. an existing
+`Frameless®` becomes `Frameless<sup>®</sup>`. An occurrence that is already
+wrapped in `<sup>` is left as-is, and a *different* symbol next to the word is
+never touched.
+
 ### Options
 
 - **Match whole words only** – only complete words are matched (so `ACME`
