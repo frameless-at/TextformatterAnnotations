@@ -60,14 +60,15 @@ Open the module configuration (**Modules → Configure → Annotations**).
 
 | Column | Meaning |
 |---|---|
-| **Operation** | `append after` — add a mark after the word. `wrap inside` — wrap part of the word in a tag. |
-| **Mark / part** | *append:* the mark to add (a symbol, footnote, any text; symbol shortcuts below). *wrap:* the part of the word to wrap — **leave empty to wrap the whole word**. |
-| **Tag** | The inline tag to wrap in. *append:* `(none)` = inline, or any tag to wrap the mark. *wrap:* required (defaults to `sub`). |
-| **Whole word** | Match complete words only (so `cat` won't match inside `category`). Unicode-aware. |
-| **Case** | Case-sensitive matching. |
-| **First only** | Annotate only the first occurrence per field value (see below). |
+| **Operation** | `append after` — add a mark after the word. `wrap inside` — wrap part of the word in a tag. `both` — do both (e.g. bold a word *and* append ®). |
+| **Mark (append)** | The mark to add — a symbol, footnote, any text (symbol shortcuts below). Shown for *append* and *both*. |
+| **Part (wrap)** | The part of the word to wrap — **leave empty to wrap the whole word**. Shown for *wrap* and *both*. |
+| **Tag** | The tag to wrap in. *append:* `(none)` = inline, or any tag to wrap the mark. *wrap:* the tag for the part (defaults to `sub`). *both:* styles the wrap; the appended mark stays inline. |
+| **Options** | `Whole word` (complete words only — `cat` won't match in `category`; unicode-aware), `Case` (case-sensitive), `First only` (annotate only the first occurrence). |
 
-New rows default to *append, whole word on, case on, first off*.
+New rows default to *append, whole word on, case on, first off*. With `both`,
+e.g. `frameless` → `<strong>frameless</strong>®` (wrap whole word in `strong`,
+append `®`).
 
 Allowed wrap tags: `sub`, `sup`, `b`, `strong`, `i`, `em`, `u`, `s`, `mark`,
 `small`, `ins`, `del`, `code`, `kbd`, `samp`, `var`, `abbr`, `cite`, `dfn`,

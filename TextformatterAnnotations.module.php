@@ -17,9 +17,9 @@
  * @property string $terms
  * @property string $skipTags
  *
- * Per-string settings are stored under dynamic keys op_<key>, val_<key>,
- * tag_<key> and opts_<key> (a checkbox array of whole/case/first), where
- * key = rowKey(term).
+ * Per-string settings are stored under dynamic keys op_<key> (append|wrap|both),
+ * mark_<key>, part_<key>, tag_<key> and opts_<key> (a checkbox array of
+ * whole/case/first), where key = rowKey(term).
  *
  */
 
@@ -28,7 +28,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Annotations',
-			'version' => 121,
+			'version' => 122,
 			'summary' => 'Appends a configurable mark (symbol, footnote, …) to configurable words, or wraps part of a word in an inline tag, during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'asterisk',
@@ -124,8 +124,10 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$key = $this->rowKey($term);
 
 			$saved = $this->get("op_$key") !== null;
-			$op = $this->get("op_$key") === 'wrap' ? 'wrap' : 'append';
-			$val = trim((string) $this->get("val_$key"));
+			$opRaw = $this->get("op_$key");
+			$op = in_array($opRaw, array('wrap', 'both'), true) ? $opRaw : 'append';
+			$mark = trim((string) $this->get("mark_$key"));
+			$part = trim((string) $this->get("part_$key"));
 			$tag = $this->wrapTag((string) $this->get("tag_$key"));
 
 			// match options (one multi-checkbox field per row); new (unsaved)
@@ -135,20 +137,23 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$case = $saved ? in_array('case', $opts, true) : true;
 			$first = $saved ? in_array('first', $opts, true) : false;
 
-			if($op === 'wrap') {
-				$find = $val === '' ? $term : $val; // empty = whole word
-				if($tag === null) $tag = 'sub'; // wrap needs a tag
+			// a row may wrap, append, or both — emitting one entry per action
+			if($op === 'wrap' || $op === 'both') {
+				$find = $part === '' ? $term : $part; // empty = whole word
 				$mappings[] = array(
-					'type' => 'wrap', 'word' => $term, 'find' => $find, 'tag' => $tag,
+					'type' => 'wrap', 'word' => $term, 'find' => $find,
+					'tag' => $tag === null ? 'sub' : $tag, // wrap needs a tag
 					'whole' => $whole, 'case' => $case, 'first' => $first,
 				);
-			} else {
-				if($val === '') continue; // append needs a mark
-				$symbol = $val;
+			}
+			if(($op === 'append' || $op === 'both') && $mark !== '') {
+				$symbol = $mark;
 				$sk = strtolower($symbol);
 				if(isset(self::$shortcuts[$sk])) $symbol = self::$shortcuts[$sk];
 				$mappings[] = array(
-					'type' => 'append', 'word' => $term, 'symbol' => $symbol, 'tag' => $tag,
+					'type' => 'append', 'word' => $term, 'symbol' => $symbol,
+					// in "both" the wrap uses the tag, so the appended mark is inline
+					'tag' => $op === 'both' ? null : $tag,
 					'whole' => $whole, 'case' => $case, 'first' => $first,
 				);
 			}
@@ -514,9 +519,10 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 		$table = $modules->get('InputfieldFieldset');
 		$table->label = $this->_('Per-string settings');
 		$table->description =
-			$this->_('**Operation** — append a mark after the string, or wrap part of it in a tag.') . "\n" .
-			$this->_('**Mark / part** — append: the mark to add; wrap: the part to wrap (empty = whole string).') . "\n" .
-			$this->_('**Tag** — the inline tag to wrap in (append: “(none)” keeps the mark inline).') . "\n" .
+			$this->_('**Operation** — *append* a mark after the string, *wrap* part of it in a tag, or *both*.') . "\n" .
+			$this->_('**Mark (append)** — the mark to add (symbol, footnote, any text).') . "\n" .
+			$this->_('**Part (wrap)** — the part of the string to wrap; empty = the whole string.') . "\n" .
+			$this->_('**Tag** — the tag to wrap in (append: “(none)” keeps the mark inline; for *both* the tag styles the wrap and the mark stays inline).') . "\n" .
 			$this->_('**Whole word / Case / First only** — matching options, individual per string.');
 		$table->notes =
 			$this->_('Symbol shortcuts (Mark): `(c)`/`copyright` → © · `(r)`/`reg` → ® · `(tm)`/`tm` → ™ · `(sm)`/`sm` → ℠') . "\n" .
@@ -542,19 +548,31 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$g->attr('name', "op_$key");
 			$g->addOption('append', $this->_('append after'));
 			$g->addOption('wrap', $this->_('wrap inside'));
+			$g->addOption('both', $this->_('both'));
 			$g->attr('value', $saved ? $data["op_$key"] : 'append');
 			$g->label = $this->_('Operation');
 			$g->required = true;
-			$g->columnWidth = 20;
+			$g->columnWidth = 18;
 			$row->add($g);
 
 			/** @var InputfieldText $g */
 			$g = $modules->get('InputfieldText');
-			$g->attr('name', "val_$key");
-			$g->attr('value', $saved && isset($data["val_$key"]) ? $data["val_$key"] : '');
-			$g->attr('placeholder', $this->_('e.g. (r) — wrap: empty = whole word'));
-			$g->label = $this->_('Mark / part');
-			$g->columnWidth = 26;
+			$g->attr('name', "mark_$key");
+			$g->attr('value', $saved && isset($data["mark_$key"]) ? $data["mark_$key"] : '');
+			$g->attr('placeholder', $this->_('e.g. ®  ·  (r)  ·  1'));
+			$g->label = $this->_('Mark (append)');
+			$g->showIf = "op_$key!=wrap"; // shown for append + both
+			$g->columnWidth = 22;
+			$row->add($g);
+
+			/** @var InputfieldText $g */
+			$g = $modules->get('InputfieldText');
+			$g->attr('name', "part_$key");
+			$g->attr('value', $saved && isset($data["part_$key"]) ? $data["part_$key"] : '');
+			$g->attr('placeholder', $this->_('empty = whole word  ·  e.g. 2'));
+			$g->label = $this->_('Part (wrap)');
+			$g->showIf = "op_$key!=append"; // shown for wrap + both
+			$g->columnWidth = 22;
 			$row->add($g);
 
 			/** @var InputfieldSelect $g */
@@ -564,7 +582,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			foreach(self::$wrapTags as $t) $g->addOption($t, $t);
 			$g->attr('value', $saved && isset($data["tag_$key"]) ? $data["tag_$key"] : '');
 			$g->label = $this->_('Tag');
-			$g->columnWidth = 18;
+			$g->columnWidth = 14;
 			$row->add($g);
 
 			// the three match options as ONE multi-checkbox field (not 3 cells)
@@ -576,7 +594,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$g->addOption('first', $this->_('First only'));
 			$g->attr('value', $saved ? (array) $data["opts_$key"] : array('whole', 'case'));
 			$g->label = $this->_('Options');
-			$g->columnWidth = 36;
+			$g->columnWidth = 24;
 			$row->add($g);
 
 			$table->add($row);
