@@ -83,12 +83,19 @@ brand name inside a URL, an `alt` text or a class name is left alone:
 
 ## Notes
 
+- **E-mail addresses are protected.** A configured word that is part of an
+  address is left untouched, e.g. with `Frameless = ®` the text
+  `info@frameless.at` stays as-is (no `info@frameless®.at`).
 - The formatter never appends a symbol twice. If a word is already followed
   by *any* known symbol — the standard marks ©, ®, ™, ℠ or any of your
   configured symbols — it is left unchanged. The check tolerates surrounding
   whitespace and an existing `<sup>` wrapper, so `Frameless©`,
   `Frameless<sup>®</sup>` and `Frameless ®` are all recognised and never get
   a second symbol.
+- **Entity forms count as present too.** The named entity (`&reg;`, `&copy;`,
+  `&trade;`) and numeric references (`&#174;`, `&#xAE;`, with leading zeros or
+  either hex case) of the configured symbols are recognised, so
+  `Frameless&reg;` is never turned into `Frameless®&reg;`.
 - When matching is case-insensitive, the original casing of the matched word
   is preserved.
 - Anything between `<` and `>` is treated as markup. In plain-text fields a

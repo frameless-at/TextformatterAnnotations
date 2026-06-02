@@ -24,7 +24,7 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Word Symbols',
-			'version' => 104,
+			'version' => 105,
 			'summary' => 'Appends configurable symbols (©, ®, ™, ℠ …) to configurable words during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'copyright',
@@ -128,6 +128,55 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 	}
 
 	/**
+	 * Unicode code point of a single character, or 0 if not determinable
+	 *
+	 * @param string $char
+	 * @return int
+	 *
+	 */
+	protected function charCode($char) {
+		if(!function_exists('mb_ord')) return 0;
+		$code = mb_ord($char, 'UTF-8');
+		return $code === false ? 0 : (int) $code;
+	}
+
+	/**
+	 * Regex fragments matching the HTML entity forms of a symbol
+	 *
+	 * Covers the named entity (for the standard marks) and the numeric
+	 * decimal/hex character references, tolerating leading zeros and either
+	 * case of the hex digits. Fragments are regex (not literal) and must not
+	 * be passed through preg_quote().
+	 *
+	 * @param string $symbol
+	 * @return array
+	 *
+	 */
+	protected function getSymbolEntities($symbol) {
+		$named = array('©' => 'copy', '®' => 'reg', '™' => 'trade');
+		$fragments = array();
+
+		if(isset($named[$symbol])) $fragments[] = '&' . $named[$symbol] . ';';
+
+		// numeric references only make sense for a single character
+		if(mb_strlen($symbol) === 1) {
+			$code = $this->charCode($symbol);
+			if($code > 0) {
+				$fragments[] = '&#0*' . $code . ';';
+				$hex = dechex($code);
+				$hexCi = '';
+				for($i = 0; $i < strlen($hex); $i++) {
+					$c = $hex[$i];
+					$hexCi .= ctype_alpha($c) ? '[' . strtoupper($c) . strtolower($c) . ']' : $c;
+				}
+				$fragments[] = '&#[xX]0*' . $hexCi . ';';
+			}
+		}
+
+		return $fragments;
+	}
+
+	/**
 	 * Build one regex pattern + replacement callback per mapping
 	 *
 	 * @param array $mappings Result of getMappings()
@@ -147,6 +196,15 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 			return mb_strlen($b) - mb_strlen($a);
 		});
 
+		// Regex fragments for the entity forms of every known symbol, so an
+		// existing "&reg;" / "&#174;" / "&#xAE;" is recognised just like "®".
+		$entityFrags = array();
+		foreach($known as $s) {
+			$entityFrags = array_merge($entityFrags, $this->getSymbolEntities($s));
+		}
+		$entityFrags = array_unique($entityFrags);
+		$entityAlt = empty($entityFrags) ? '' : implode('|', $entityFrags);
+
 		// word boundaries that are unicode-aware (\b is not reliable for é, ö …)
 		$before = $this->wholeWord ? '(?<![\p{L}\p{N}_])' : '';
 		$after = $this->wholeWord ? '(?![\p{L}\p{N}_])' : '';
@@ -161,34 +219,37 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 
 			if($m['sup']) {
 				// Superscript mapping. Upgrade a bare occurrence of *this* symbol
-				// to the <sup> form, but leave an existing <sup> wrapper and any
-				// *other* symbol untouched (so we never produce "<sup>®</sup>©").
+				// to the <sup> form, but leave an existing <sup> wrapper, any
+				// *other* symbol and any entity form untouched (so we never
+				// produce "<sup>®</sup>©" or "<sup>®</sup>&reg;").
 				$others = array_values(array_filter($known, function($s) use($symbol) {
 					return $s !== $symbol;
 				}));
-				$skipOther = '';
+				$guard = '(?!\s*<sup)';
 				if(!empty($others)) {
 					$otherAlt = implode('|', array_map(function($s) {
 						return preg_quote($s, '/');
 					}, $others));
-					$skipOther = '(?!\s*(?:' . $otherAlt . '))';
+					$guard .= '(?!\s*(?:' . $otherAlt . '))';
 				}
-				// (word)(boundary)(not already sup-wrapped)(no other symbol)(absorb own bare symbol?)
+				if($entityAlt !== '') $guard .= '(?!\s*(?:' . $entityAlt . '))';
+				// (word)(boundary)(guards: not sup-wrapped, no other symbol, no entity)(absorb own bare symbol?)
 				$pattern = '/' . $before . '(' . $quotedWord . ')' . $after
-					. '(?!\s*<sup)' . $skipOther . '(?:\s*' . $quotedSymbol . ')?/' . $flags;
+					. $guard . '(?:\s*' . $quotedSymbol . ')?/' . $flags;
 				$callback = function($matches) use ($symbol) {
 					return $matches[1] . '<sup>' . $symbol . '</sup>';
 				};
 
 			} else {
 				// Plain mapping. Skip if the word is already followed by any known
-				// symbol — optionally after whitespace and/or inside a <sup>
-				// wrapper — so none is ever added twice (handles "©" and
-				// "<sup>©</sup>" alike).
-				$symbolsAlt = implode('|', array_map(function($s) {
+				// symbol or its entity form — optionally after whitespace and/or
+				// inside a <sup> wrapper — so none is ever added twice (handles
+				// "©", "<sup>©</sup>" and "&copy;" / "&#169;" alike).
+				$alt = array_map(function($s) {
 					return preg_quote($s, '/');
-				}, $known));
-				$dupCheck = '(?!\s*(?:<sup[^>]*>\s*)?(?:' . $symbolsAlt . '))';
+				}, $known);
+				if($entityAlt !== '') $alt[] = $entityAlt;
+				$dupCheck = '(?!\s*(?:<sup[^>]*>\s*)?(?:' . implode('|', $alt) . '))';
 				$pattern = '/' . $before . $quotedWord . $after . $dupCheck . '/' . $flags;
 				$callback = function($matches) use ($symbol) {
 					return $matches[0] . $symbol;
@@ -253,19 +314,46 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 			// text node — skip if we are inside a skip-tag, or it's empty
 			if($skipDepth > 0 || $parts[$i] === '') continue;
 
-			// apply each mapping; first-occurrence counts are kept across tokens
+			$parts[$i] = $this->replaceInText($parts[$i], $patterns);
+		}
+
+		$str = implode('', $parts);
+	}
+
+	/**
+	 * Apply the mappings to a plain text segment (no surrounding markup)
+	 *
+	 * E-mail addresses are protected: a configured word that is part of an
+	 * address (e.g. "frameless" in "info@frameless.at") is left untouched.
+	 * The per-mapping "remaining" counts are kept across calls so that
+	 * "first occurrence only" still counts document-wide.
+	 *
+	 * @param string $text
+	 * @param array $patterns Result of buildPatterns(), passed by reference
+	 * @return string
+	 *
+	 */
+	protected function replaceInText($text, array &$patterns) {
+
+		// split out e-mail addresses as protected tokens (odd indexes)
+		$email = '/([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})/';
+		$segments = preg_split($email, $text, -1, PREG_SPLIT_DELIM_CAPTURE);
+
+		foreach($segments as $j => $segment) {
+			if($j % 2 === 1 || $segment === '') continue; // e-mail token or empty
+
 			foreach($patterns as $word => &$p) {
 				if($p['remaining'] === 0) continue;
 				$count = 0;
-				$parts[$i] = preg_replace_callback(
-					$p['pattern'], $p['callback'], $parts[$i], $p['remaining'], $count
+				$segments[$j] = preg_replace_callback(
+					$p['pattern'], $p['callback'], $segments[$j], $p['remaining'], $count
 				);
 				if($p['remaining'] > 0) $p['remaining'] -= $count;
 			}
 			unset($p);
 		}
 
-		$str = implode('', $parts);
+		return implode('', $segments);
 	}
 
 	/**
