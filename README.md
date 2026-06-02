@@ -30,6 +30,11 @@ ProcessWire = (tm)
 MyBrand     = ™
 ```
 
+Words may contain spaces, and overlapping definitions are supported: the
+**longest matching phrase wins**. With both `frameless` and `frameless Media`
+defined, `frameless Media` gets its own mark while a standalone `frameless`
+gets the other.
+
 The mark is any text appended after the word. For convenience a few **symbol
 shortcuts** are recognised:
 

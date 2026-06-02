@@ -25,7 +25,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Annotations',
-			'version' => 112,
+			'version' => 113,
 			'summary' => 'Appends a configurable mark (symbol, footnote, …) to configurable words during output formatting, optionally wrapped in <sup>.',
 			'author' => 'frameless Media',
 			'icon' => 'asterisk',
@@ -208,20 +208,21 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	}
 
 	/**
-	 * Build one regex pattern per mapping
+	 * Build a single combined regex matching every configured word
 	 *
-	 * Each pattern is `(?<prot>protected)|word(+guards)` so a single pass over
-	 * the whole value can decorate matching words while leaving protected
-	 * constructs untouched. Because the value is not split, the dedup guards
-	 * can see what follows a word across tag boundaries (e.g. an existing
-	 * `<sup>©</sup>`).
+	 * All words go into one alternation ordered longest-first, so the longest
+	 * matching phrase wins (e.g. "frameless Media" before "frameless") and the
+	 * whole value is processed in one pass. The matched word is identified by
+	 * its named group `m<i>`; an existing decoration following the word (any
+	 * known symbol/entity, bare or in a <sup> wrapper) is captured so it can be
+	 * normalised. Protected constructs are matched first and passed through.
 	 *
 	 * @param array $mappings Result of getMappings()
 	 * @param string $flags Regex modifiers
-	 * @return array word => array('pattern' => string, 'symbol' => string, 'sup' => bool)
+	 * @return array array('pattern' => string, 'meta' => array(int => array))
 	 *
 	 */
-	protected function buildPatterns(array $mappings, $flags) {
+	protected function buildPattern(array $mappings, $flags) {
 
 		// Every symbol that counts as "already present": the standard marks
 		// plus all configured symbols. Longest first so a multi-character
@@ -233,114 +234,102 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			return mb_strlen($b) - mb_strlen($a);
 		});
 
-		// Regex fragments for the entity forms of every known symbol, so an
-		// existing "&reg;" / "&#174;" / "&#xAE;" is recognised just like "®".
-		$entityFrags = array();
+		// alternation of any known symbol or its entity forms (any spelling)
+		$anyList = array_map(function($s) {
+			return preg_quote($s, '~');
+		}, $known);
 		foreach($known as $s) {
-			$entityFrags = array_merge($entityFrags, $this->getSymbolEntities($s));
+			foreach($this->getSymbolEntities($s) as $f) $anyList[] = $f;
 		}
-		$entityFrags = array_unique($entityFrags);
-		$entityAlt = empty($entityFrags) ? '' : implode('|', $entityFrags);
+		$anyList = array_unique($anyList);
+		$anyAlt = implode('|', $anyList);
 
 		// word boundaries that are unicode-aware (\b is not reliable for é, ö …)
 		$before = $this->wholeWord ? '(?<![\p{L}\p{N}_])' : '';
 		$after = $this->wholeWord ? '(?![\p{L}\p{N}_])' : '';
 
-		// matches an existing decoration right after a word: any known symbol or
-		// entity, optionally inside a <sup> wrapper. Used both for the plain
-		// dedup guard and to detect already-decorated occurrences (first-only).
-		$presentList = array_map(function($s) {
-			return preg_quote($s, '~');
-		}, $known);
-		if($entityAlt !== '') $presentList[] = $entityAlt;
-		$presentGroup = '(?:<sup[^>]*>\s*)?(?:' . implode('|', $presentList) . ')';
+		// words longest-first so the longest matching phrase wins
+		$words = array_keys($mappings);
+		usort($words, function($a, $b) {
+			return mb_strlen($b) - mb_strlen($a);
+		});
 
-		$protected = $this->getProtectedPattern();
-		$patterns = array();
-
-		foreach($mappings as $word => $m) {
-
-			$symbol = $m['symbol'];
-			$quotedWord = preg_quote($word, '~');
-			$quotedSymbol = preg_quote($symbol, '~');
-
+		$alts = array();
+		$meta = array();
+		$i = 0;
+		foreach($words as $word) {
+			$m = $mappings[$word];
 			// all spellings of *this* symbol: literal char + its entity forms
-			$ownAlt = $quotedSymbol;
-			foreach($this->getSymbolEntities($symbol) as $f) $ownAlt .= '|' . $f;
-
-			// an existing decoration of *this* symbol directly after the word: a
-			// <sup> wrapper of it (inner spelling captured) or a bare spelling.
-			// Captured in (?<deco>…) so the callback can normalise it to the
-			// configured form — wrap a bare one for `| sup`, unwrap a <sup> one
-			// for a plain mapping — while preserving the spelling.
-			$ownDeco = '\s*(?:<sup[^>]*>\s*(?<inner>' . $ownAlt . ')\s*</sup>|' . $ownAlt . ')';
-
-			// Match the word, then either capture an own decoration to normalise,
-			// or assert nothing decorated follows so a new symbol may be added.
-			// `presentGroup` covers any known symbol/entity (bare or in <sup>), so
-			// a different symbol next to the word is left untouched.
-			$word_pattern = $before . '(?<w>' . $quotedWord . ')' . $after
-				. '(?:(?<deco>' . $ownDeco . ')|(?!\s*' . $presentGroup . '))';
-
-			// first-occurrence-only mode: match every occurrence (decorated or not)
-			// so the first can be normalised and every later one stripped.
-			$firstPattern = '~(?<prot>' . $protected . ')|' . $before . '(?<w>' . $quotedWord . ')' . $after
-				. '(?<deco>' . $ownDeco . ')?~' . $flags;
-
-			$patterns[$word] = array(
-				// decorate/normalise words, leaving protected constructs untouched
-				'pattern' => '~(?<prot>' . $protected . ')|' . $word_pattern . '~' . $flags,
-				// used when "first occurrence only" is on
-				'firstPattern' => $firstPattern,
-				'symbol' => $symbol,
+			$ownAlt = preg_quote($m['symbol'], '~');
+			foreach($this->getSymbolEntities($m['symbol']) as $f) $ownAlt .= '|' . $f;
+			$alts[] = '(?<m' . $i . '>' . preg_quote($word, '~') . ')';
+			$meta[$i] = array(
+				'word' => $word,
+				'symbol' => $m['symbol'],
 				'sup' => $m['sup'],
+				// tests whether a captured decoration spelling is *this* symbol
+				'ownTest' => '~^(?:' . $ownAlt . ')$~' . $flags,
 			);
+			$i++;
 		}
 
-		return $patterns;
+		// optional existing decoration right after the word: any symbol/entity,
+		// bare or wrapped in <sup>; the inner spelling is captured separately so
+		// it can be unwrapped or kept as-is.
+		$deco = '(?<deco>\s*(?:<sup[^>]*>\s*(?<inner>' . $anyAlt . ')\s*</sup>|(?<bare>' . $anyAlt . ')))?';
+
+		$pattern = '~(?<prot>' . $this->getProtectedPattern() . ')|'
+			. $before . '(?:' . implode('|', $alts) . ')' . $after . $deco . '~' . $flags;
+
+		return array('pattern' => $pattern, 'meta' => $meta);
 	}
 
 	/**
-	 * Render a word with the symbol in the configured form
+	 * Render a matched word with its mark in the configured form
 	 *
-	 * Normalises an existing decoration to match the mapping's wrap setting,
-	 * keeping the symbol's spelling: a bare symbol is wrapped for `| sup`, and
-	 * an existing <sup> wrapper is unwrapped for a plain mapping. With no
-	 * existing decoration the configured symbol is added.
+	 * Adds the mark when none follows; otherwise normalises an existing mark of
+	 * *this* symbol to the mapping's wrap setting (wrap a bare one for `| sup`,
+	 * unwrap a <sup> one for a plain mapping), keeping its spelling. A different
+	 * symbol next to the word is left untouched.
 	 *
-	 * @param string $w The matched word
-	 * @param string $deco Captured existing decoration ('' if none)
-	 * @param string $inner Inner spelling captured from a <sup> wrapper ('' if not wrapped)
-	 * @param string $symbol Configured symbol
-	 * @param bool $sup Whether the mapping wraps in <sup>
+	 * @param string $w Matched word (original casing)
+	 * @param string $deco Captured decoration ('' if none)
+	 * @param string $inner Inner spelling from a <sup> wrapper ('' if not wrapped)
+	 * @param string $bare Bare spelling ('' if wrapped or none)
+	 * @param array $info Mapping meta (symbol, sup, ownTest)
 	 * @return string
 	 *
 	 */
-	protected function applyDecoration($w, $deco, $inner, $symbol, $sup) {
-		$deco = ltrim($deco);
-		$wrapped = $inner !== '';
+	protected function renderMatch($w, $deco, $inner, $bare, array $info) {
+		$symbol = $info['symbol'];
+		$sup = $info['sup'];
 
-		if($sup) {
-			if($deco === '') return $w . '<sup>' . $symbol . '</sup>';
-			if($wrapped) return $w . $deco; // already wrapped, keep
-			// bare symbol/entity → wrap, keeping an entity spelling as-is
-			$spelling = ($deco[0] === '&') ? $deco : $symbol;
-			return $w . '<sup>' . $spelling . '</sup>';
+		if($deco === '') {
+			return $sup ? $w . '<sup>' . $symbol . '</sup>' : $w . $symbol;
 		}
 
-		// plain mapping
-		if($deco === '') return $w . $symbol;
-		if($wrapped) return $w . $inner; // unwrap, keeping the spelling
-		return $w . $deco; // already bare, keep
+		// a symbol/entity already follows; only normalise it if it is this symbol
+		$symText = $inner !== '' ? $inner : $bare;
+		if(!preg_match($info['ownTest'], $symText)) return $w . $deco;
+
+		$wrapped = $inner !== '';
+		$decoTrim = ltrim($deco);
+		if($sup) {
+			if($wrapped) return $w . $decoTrim; // already wrapped, keep
+			$spelling = ($decoTrim[0] === '&') ? $decoTrim : $symbol;
+			return $w . '<sup>' . $spelling . '</sup>';
+		}
+		if($wrapped) return $w . $inner; // unwrap, keep spelling
+		return $w . $decoTrim; // already bare, keep
 	}
 
 	/**
-	 * Apply the symbol substitutions to the given string
+	 * Apply the annotations to the given string
 	 *
 	 * Replacements are applied to text content only: HTML tags, attributes,
 	 * comments and e-mail addresses are never modified, and the content of
-	 * configured skip-tags (e.g. code, pre) is left untouched. Each mapping is
-	 * applied in a single pass over the whole value.
+	 * configured skip-tags (e.g. code, pre) is left untouched. The whole value
+	 * is processed in a single pass; the longest matching word wins.
 	 *
 	 * @param string $str
 	 *
@@ -353,34 +342,45 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 		$flags = 'su'; // dot matches newlines (skip-tag blocks/comments) + unicode
 		if(!$this->caseSensitive) $flags .= 'i';
 
-		foreach($this->buildPatterns($mappings, $flags) as $word => $p) {
+		$built = $this->buildPattern($mappings, $flags);
+		$meta = $built['meta'];
+		$firstOnly = (bool) $this->firstOnly;
+		$seen = array();
 
-			$symbol = $p['symbol'];
-			$sup = $p['sup'];
+		$str = preg_replace_callback($built['pattern'], function($m) use ($meta, $firstOnly, &$seen) {
+			// protected construct (tag, comment, e-mail, skip block): leave as-is
+			if(isset($m['prot']) && $m['prot'] !== '') return $m[0];
 
-			if($this->firstOnly) {
-				// Exactly one symbol, on the first occurrence: normalise the first
-				// occurrence and strip any existing symbol from all later ones.
-				$seen = false;
-				$str = preg_replace_callback($p['firstPattern'], function($m) use ($symbol, $sup, &$seen) {
-					if(isset($m['prot']) && $m['prot'] !== '') return $m[0];
-					if($seen) return $m['w']; // later occurrence: strip existing symbol
-					$seen = true;
-					$deco = isset($m['deco']) ? $m['deco'] : '';
-					$inner = isset($m['inner']) ? $m['inner'] : '';
-					return $this->applyDecoration($m['w'], $deco, $inner, $symbol, $sup);
-				}, $str);
-				continue;
+			// identify which word matched (its named group is the non-empty one)
+			$info = null;
+			$w = '';
+			foreach($meta as $gi => $candidate) {
+				$key = 'm' . $gi;
+				if(isset($m[$key]) && $m[$key] !== '') {
+					$info = $candidate;
+					$w = $m[$key];
+					break;
+				}
+			}
+			if($info === null) return $m[0];
+
+			$deco = isset($m['deco']) ? $m['deco'] : '';
+			$inner = isset($m['inner']) ? $m['inner'] : '';
+			$bare = isset($m['bare']) ? $m['bare'] : '';
+
+			if($firstOnly) {
+				$word = $info['word'];
+				if(isset($seen[$word])) {
+					// later occurrence: strip this symbol, leave a different one
+					if($deco === '') return $w;
+					$symText = $inner !== '' ? $inner : $bare;
+					return preg_match($info['ownTest'], $symText) ? $w : $w . $deco;
+				}
+				$seen[$word] = true;
 			}
 
-			$str = preg_replace_callback($p['pattern'], function($m) use ($symbol, $sup) {
-				// protected construct (tag, comment, e-mail, skip block): leave as-is
-				if(isset($m['prot']) && $m['prot'] !== '') return $m[0];
-				$deco = isset($m['deco']) ? $m['deco'] : '';
-				$inner = isset($m['inner']) ? $m['inner'] : '';
-				return $this->applyDecoration($m['w'], $deco, $inner, $symbol, $sup);
-			}, $str);
-		}
+			return $this->renderMatch($w, $deco, $inner, $bare, $info);
+		}, $str);
 	}
 
 	/**
