@@ -42,9 +42,18 @@ idempotent, HTML-safe symbol/footnote annotation.
 
 1. Copy the `TextformatterAnnotations` folder into `/site/modules/`.
 2. In the ProcessWire admin go to **Modules → Refresh**, then install
-   **Annotations**.
+   **Annotations**. This also installs the companion **ProcessAnnotations**.
 3. Edit a text/textarea field, open the **Details** tab and add
    **Annotations** to the field's *Text formatters*.
+
+## Client-editable settings page
+
+Installing the module adds a page under **Setup > Annotations** (the companion
+`ProcessAnnotations` module) that shows the same settings as the module config.
+It is guarded by the `annotations-edit` permission, so you can let editors
+manage the strings without giving them access to the Modules section: assign
+`annotations-edit` to the relevant role. Superusers can still configure it the
+usual way under **Modules > Configure > Annotations**.
 
 ## Configuration
 

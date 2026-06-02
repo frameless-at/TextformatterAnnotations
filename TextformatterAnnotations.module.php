@@ -28,10 +28,12 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Annotations',
-			'version' => 131,
+			'version' => 132,
 			'summary' => 'Appends a configurable mark (symbol, footnote, …) to configurable words, or wraps part of a word in an inline tag, during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'asterisk',
+			// auto-install the Setup page so clients can edit it without Modules access
+			'installs' => array('ProcessAnnotations'),
 		);
 	}
 
