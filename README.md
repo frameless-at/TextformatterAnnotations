@@ -5,11 +5,13 @@ to configurable words during output formatting. The mark can be anything —
 a symbol (**©**, **®**, **™**, **℠**), a footnote marker, or any short string —
 and can optionally be wrapped in a `<sup>` tag per mapping.
 
-Examples:
+Each string is configured in a small table (operation, mark/part, tag, and the
+match options). Examples of what it can do:
 
-- `frameless = ®` → every `frameless` becomes `frameless®`
-- `Term = 1 | sup` → the first `Term` becomes `Term<sup>1</sup>` (footnote)
-- `H2O == 2 | sub` → every `H2O` becomes `H<sub>2</sub>O`
+- `frameless` → `frameless®`
+- `Term` → `Term<sup>1</sup>` (footnote, first mention only)
+- `H2O` → `H<sub>2</sub>O`
+- `frameless` → `<strong>frameless</strong>`
 
 ## Why not Find/Replace?
 
@@ -30,7 +32,7 @@ is the robustness layer that a raw find/replace does not give you:
 - **First occurrence only** that also strips marks from later occurrences —
   useful for footnotes.
 - **Longest match wins** across overlapping, multi-word definitions.
-- **Editor-friendly config** (`Word = mark | sup`), no regex knowledge needed.
+- **Editor-friendly config** — a per-string settings table, no regex needed.
 
 Use **Find/Replace** for arbitrary one-off text/markup transforms (domain
 swaps, tag conversion, generic regex). Use **Annotations** for consistent,
@@ -46,39 +48,32 @@ idempotent, HTML-safe symbol/footnote annotation.
 
 ## Configuration
 
-Open the module configuration (**Modules → Configure → Annotations**) and
-define one mapping per line in the format `word = mark`:
+Open the module configuration (**Modules → Configure → Annotations**).
 
-```
-frameless   = ®
-Term        = 1 | sup
-ProcessWire = (tm)
-MyBrand     = ™
-```
+1. In **Strings**, enter one search string per line — *nothing else*. A string
+   may contain spaces (e.g. `frameless Media`).
+2. **Save.** A settings row is generated per string under **Per-string
+   settings**.
+3. Configure each row and save again.
 
-There are two operators:
+### Per-string settings (one row per string)
 
-- **`word = mark`** — append `mark` after the word.
-- **`word == find | tag`** — inside the word, wrap occurrences of `find` in
-  `tag`. Example: `H2O == 2 | sub` → `H<sub>2</sub>O`, `m2 == 2 | sup` →
-  `m<sup>2</sup>`. An **empty `find`** wraps the whole word, so
-  `frameless == | b` → `<b>frameless</b>` (shortcut for
-  `frameless == frameless | b`). Without a tag it defaults to `sub`.
+| Column | Meaning |
+|---|---|
+| **Operation** | `append after` — add a mark after the word. `wrap inside` — wrap part of the word in a tag. |
+| **Mark / part** | *append:* the mark to add (a symbol, footnote, any text; symbol shortcuts below). *wrap:* the part of the word to wrap — **leave empty to wrap the whole word**. |
+| **Tag** | The inline tag to wrap in. *append:* `(none)` = inline, or any tag to wrap the mark. *wrap:* required (defaults to `sub`). |
+| **Whole word** | Match complete words only (so `cat` won't match inside `category`). Unicode-aware. |
+| **Case** | Case-sensitive matching. |
+| **First only** | Annotate only the first occurrence per field value (see below). |
 
-The `| tag` flag (on either operator) accepts any of these inline tags:
-`sub`, `sup`, `b`, `strong`, `i`, `em`, `u`, `s`, `mark`, `small`, `ins`,
-`del`, `code`, `kbd`, `samp`, `var`, `abbr`, `cite`, `dfn`, `q`, `time`.
+New rows default to *append, whole word on, case on, first off*.
 
-Words may contain spaces, and overlapping definitions are supported.
-Append mappings are applied first, then wrap mappings **layer on top**, so a
-wrapped word also styles inside an appended phrase — e.g. with
-`frameless Media = (r)` and `frameless == | strong`, the text `frameless Media`
-becomes `<strong>frameless</strong> Media®`. Within each phase the **longest
-matching phrase wins** (so two appends like `frameless` and `frameless Media`
-don't both fire on the phrase).
+Allowed wrap tags: `sub`, `sup`, `b`, `strong`, `i`, `em`, `u`, `s`, `mark`,
+`small`, `ins`, `del`, `code`, `kbd`, `samp`, `var`, `abbr`, `cite`, `dfn`,
+`q`, `time`.
 
-For the append operator, the mark is any text. For convenience a few **symbol
-shortcuts** are recognised:
+**Symbol shortcuts** for the *Mark* field of an append row:
 
 | Shortcut(s)                     | Symbol |
 |---------------------------------|--------|
@@ -87,45 +82,29 @@ shortcuts** are recognised:
 | `(tm)`, `tm`, `trademark`       | ™      |
 | `(sm)`, `sm`, `servicemark`     | ℠      |
 
-### Wrapping the appended mark (per word)
+A single global option remains: **Skip inside these tags** — text inside the
+listed HTML elements (and descendants) is left untouched. Default:
+`code pre script style`. Add `a` if you do not want link text annotated.
 
-Append `| tag` to a line to wrap the appended mark in that tag — set per
-mapping, so you can mix wrapped and inline marks:
+### How rows combine
 
-```
-Term        = 1 | sup        →  Term<sup>1</sup>
-ProcessWire = (tm) | sup     →  ProcessWire<sup>™</sup>
-ACME        = ©              →  ACME©
-```
+Append rows are applied first, then wrap rows **layer on top**, so a wrapped
+string also styles inside an appended phrase — with `frameless Media` (append
+`(r)`) and `frameless` (wrap whole word in `strong`), the text `frameless Media`
+becomes `<strong>frameless</strong> Media®`. Within each phase the **longest
+matching string wins**.
 
-The mapping's tag is authoritative — an existing mark is normalised to it,
-keeping its spelling:
+The tag is authoritative — an existing mark is normalised to it, keeping its
+spelling: an append row with a tag wraps a bare mark (and rewraps a different
+tag); an append row with `(none)` unwraps an existing wrapper. A *different*
+mark next to the word is never touched.
 
-- **`| tag` mapping:** a bare mark is wrapped, and a mark wrapped in a
-  *different* tag is rewrapped — `frameless&reg;` → `frameless<sup>&reg;</sup>`.
-- **plain mapping (no tag):** an existing wrapper is **unwrapped** —
-  `frameless<sup>&reg;</sup>` → `frameless&reg;`.
-
-A *different* mark next to the word is never touched.
-
-### Options
-
-- **Match whole words only** – only complete words are matched (so `ACME`
-  will not match inside `ACMElabs`). Unicode-aware boundaries, so accented
-  characters (ö, é, …) are handled correctly.
-- **Case sensitive** – when enabled, `acme` and `ACME` are treated as
-  different words.
-- **First occurrence only** – the word is annotated exactly once, on its first
-  occurrence. For the append operator, that occurrence keeps/normalises its
-  mark while every later occurrence has its mark **removed** (including marks
-  already in the source: `©`, `&copy;`, `<sup>…</sup>`). For the wrap operator,
-  only the first occurrence is wrapped; later occurrences are left unwrapped.
-  Useful for footnotes (mark only the first mention). Protected regions
-  (attributes, e-mails, skip-tags) are ignored when finding occurrences.
-- **Skip inside these tags** – text inside the listed HTML elements (and their
-  descendants) is left untouched. Default: `code pre script style`. Separate
-  tag names with spaces or commas. Add `a` if you do not want link text
-  annotated.
+**First only** annotates the string exactly once per field value. For append,
+the first occurrence keeps/normalises its mark and every later one has its mark
+**removed** (including marks already in the source: `©`, `&copy;`,
+`<sup>…</sup>`). For wrap, only the first occurrence is wrapped. Useful for
+footnotes. Protected regions (attributes, e-mails, skip-tags) are ignored when
+finding occurrences.
 
 ## HTML-aware
 
@@ -142,7 +121,7 @@ inside a URL, an `alt` text or a class name is left alone:
 ## Notes
 
 - **E-mail addresses are protected.** A configured word that is part of an
-  address is left untouched, e.g. with `frameless = ®` the text
+  address is left untouched, e.g. with a `frameless` → ® mapping the text
   `info@frameless.at` stays as-is (no `info@frameless®.at`).
 - The formatter never adds a mark twice. If a word is already followed by its
   mark — tolerating surrounding whitespace and an existing `<sup>` wrapper — it

@@ -14,11 +14,11 @@
  * Copyright 2026 by frameless Media
  * Licensed under MIT
  *
- * @property string $mappings
- * @property int $wholeWord
- * @property int $caseSensitive
- * @property int $firstOnly
+ * @property string $terms
  * @property string $skipTags
+ *
+ * Per-string settings are stored under dynamic keys op_<key>, val_<key>,
+ * tag_<key>, whole_<key>, case_<key>, first_<key> (key = rowKey(term)).
  *
  */
 
@@ -27,7 +27,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Annotations',
-			'version' => 118,
+			'version' => 119,
 			'summary' => 'Appends a configurable mark (symbol, footnote, …) to configurable words, or wraps part of a word in an inline tag, during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'asterisk',
@@ -39,10 +39,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	 *
 	 */
 	protected static $defaults = array(
-		'mappings' => '',
-		'wholeWord' => 1,
-		'caseSensitive' => 1,
-		'firstOnly' => 0,
+		'terms' => '',
 		'skipTags' => 'code pre script style',
 	);
 
@@ -93,71 +90,65 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	}
 
 	/**
-	 * Parse the configured mappings textarea into a list of mapping entries
+	 * Config storage key for a term's per-string settings
 	 *
-	 * Two operators, one mapping per line:
+	 * Content-based (md5) so it survives reordering and is a safe field name.
 	 *
-	 * - `word = mark` (append): append the mark after the word. The mark may be
-	 *   a literal character or a named shortcut (see $shortcuts). A trailing
-	 *   `| tag` flag wraps it in that tag, e.g. `ProcessWire = (tm) | sup`.
-	 * - `word == find | tag` (wrap): inside the word, wrap occurrences of `find`
-	 *   in `tag`, e.g. `H2O == 2 | sub` → `H<sub>2</sub>O`. An empty `find`
-	 *   (`word == | tag`) wraps the whole word, e.g. `frameless == | b`.
+	 * @param string $term
+	 * @return string
 	 *
-	 * The wrap tag is any allowed inline tag (see $wrapTags).
+	 */
+	protected function rowKey($term) {
+		return substr(md5($term), 0, 10);
+	}
+
+	/**
+	 * Build the list of mapping entries from the terms list + per-row settings
 	 *
-	 * @return array list of array('type' => 'append'|'wrap', 'word' => string, …)
+	 * The terms textarea holds one search string per line; everything else
+	 * (operation, mark/part, tag, whole-word, case, first-only) is stored per
+	 * row under dynamic config keys. A row not yet saved uses sensible defaults
+	 * (append, whole word + case sensitive on, first-only off).
+	 *
+	 * @return array list of mapping entries with per-row 'whole'/'case'/'first'
 	 *
 	 */
 	protected function getMappings() {
 		$mappings = array();
-		$lines = preg_split('/\r\n|\r|\n/', (string) $this->mappings);
+		$terms = preg_split('/\r\n|\r|\n/', (string) $this->terms);
 
-		foreach($lines as $line) {
-			$line = trim($line);
-			if($line === '') continue;
-			$eq = strpos($line, '=');
-			if($eq === false) continue;
+		foreach($terms as $term) {
+			$term = trim($term);
+			if($term === '') continue;
+			$key = $this->rowKey($term);
 
-			// "==" → wrap operator: wrap a substring inside the word
-			if(isset($line[$eq + 1]) && $line[$eq + 1] === '=') {
-				$word = trim(substr($line, 0, $eq));
-				$rest = trim(substr($line, $eq + 2));
-				$tag = 'sub'; // default
-				if(strpos($rest, '|') !== false) {
-					list($find, $flag) = explode('|', $rest, 2);
-					$rest = trim($find);
-					$valid = $this->wrapTag($flag);
-					if($valid !== null) $tag = $valid;
-				}
-				$find = $rest;
-				if($word === '') continue;
-				// shortcut: empty find ("word== | tag") wraps the whole word
-				if($find === '') $find = $word;
-				$mappings[] = array('type' => 'wrap', 'word' => $word, 'find' => $find, 'tag' => $tag);
-				continue;
+			$saved = $this->get("op_$key") !== null;
+			$op = $this->get("op_$key") === 'wrap' ? 'wrap' : 'append';
+			$val = trim((string) $this->get("val_$key"));
+			$tag = $this->wrapTag((string) $this->get("tag_$key"));
+
+			// new (unsaved) rows: whole word + case sensitive on, first-only off
+			$whole = $saved ? (bool) $this->get("whole_$key") : true;
+			$case = $saved ? (bool) $this->get("case_$key") : true;
+			$first = $saved ? (bool) $this->get("first_$key") : false;
+
+			if($op === 'wrap') {
+				$find = $val === '' ? $term : $val; // empty = whole word
+				if($tag === null) $tag = 'sub'; // wrap needs a tag
+				$mappings[] = array(
+					'type' => 'wrap', 'word' => $term, 'find' => $find, 'tag' => $tag,
+					'whole' => $whole, 'case' => $case, 'first' => $first,
+				);
+			} else {
+				if($val === '') continue; // append needs a mark
+				$symbol = $val;
+				$sk = strtolower($symbol);
+				if(isset(self::$shortcuts[$sk])) $symbol = self::$shortcuts[$sk];
+				$mappings[] = array(
+					'type' => 'append', 'word' => $term, 'symbol' => $symbol, 'tag' => $tag,
+					'whole' => $whole, 'case' => $case, 'first' => $first,
+				);
 			}
-
-			// "=" → append operator
-			$word = trim(substr($line, 0, $eq));
-			$rest = trim(substr($line, $eq + 1));
-
-			// optional trailing flag: `mark | tag`
-			$tag = null; // null = plain append (no wrapping)
-			if(strpos($rest, '|') !== false) {
-				list($sym, $flag) = explode('|', $rest, 2);
-				$rest = trim($sym);
-				$tag = $this->wrapTag($flag);
-			}
-
-			$symbol = $rest;
-			if($word === '' || $symbol === '') continue;
-
-			// expand named shortcut if one was used
-			$key = strtolower($symbol);
-			if(isset(self::$shortcuts[$key])) $symbol = self::$shortcuts[$key];
-
-			$mappings[] = array('type' => 'append', 'word' => $word, 'symbol' => $symbol, 'tag' => $tag);
 		}
 
 		return $mappings;
@@ -296,29 +287,34 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 		$anyList = array_unique($anyList);
 		$anyAlt = implode('|', $anyList);
 
-		// word boundaries that are unicode-aware (\b is not reliable for é, ö …)
-		$before = $this->wholeWord ? '(?<![\p{L}\p{N}_])' : '';
-		$after = $this->wholeWord ? '(?![\p{L}\p{N}_])' : '';
-		$caseFlag = $this->caseSensitive ? '' : 'i';
-
 		// entries longest-first (by word) so the longest matching phrase wins
 		$entries = $mappings;
 		usort($entries, function($a, $b) {
 			return mb_strlen($b['word']) - mb_strlen($a['word']);
 		});
 
+		// Each alternative carries its own boundaries and case sensitivity:
+		// whole-word adds unicode-aware boundary lookarounds; a case-insensitive
+		// row wraps the word in an inline (?i:…) group. (\b is not reliable for
+		// é, ö …, hence the explicit lookarounds.)
 		$alts = array();
 		$meta = array();
 		$i = 0;
 		foreach($entries as $m) {
-			$alts[] = '(?<m' . $i . '>' . preg_quote($m['word'], '~') . ')';
+			$quoted = preg_quote($m['word'], '~');
+			$wordRe = $m['case'] ? $quoted : '(?i:' . $quoted . ')';
+			$before = $m['whole'] ? '(?<![\p{L}\p{N}_])' : '';
+			$after = $m['whole'] ? '(?![\p{L}\p{N}_])' : '';
+			$alts[] = $before . '(?<m' . $i . '>' . $wordRe . ')' . $after;
+
 			if($m['type'] === 'wrap') {
 				$meta[$i] = array(
 					'type' => 'wrap',
 					'word' => $m['word'],
 					'tag' => $m['tag'],
+					'first' => $m['first'],
 					// matches the substring to wrap inside the word
-					'findRe' => '~' . preg_quote($m['find'], '~') . '~u' . $caseFlag,
+					'findRe' => '~' . preg_quote($m['find'], '~') . '~u' . ($m['case'] ? '' : 'i'),
 				);
 			} else {
 				// all spellings of *this* symbol: literal char + its entity forms
@@ -329,8 +325,9 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 					'word' => $m['word'],
 					'symbol' => $m['symbol'],
 					'tag' => $m['tag'],
+					'first' => $m['first'],
 					// tests whether a captured decoration spelling is *this* symbol
-					'ownTest' => '~^(?:' . $ownAlt . ')$~' . $flags,
+					'ownTest' => '~^(?:' . $ownAlt . ')$~su',
 				);
 			}
 			$i++;
@@ -344,7 +341,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 		$deco = '(?<deco>\s*(?:<(?<dtag>' . $tagAlt . ')\b[^>]*>\s*(?<inner>' . $anyAlt . ')\s*</\k<dtag>\s*>|(?<bare>' . $anyAlt . ')))?';
 
 		$pattern = '~(?<prot>' . $this->getProtectedPattern() . ')|'
-			. $before . '(?:' . implode('|', $alts) . ')' . $after . $deco . '~' . $flags;
+			. '(?:' . implode('|', $alts) . ')' . $deco . '~' . $flags;
 
 		return array('pattern' => $pattern, 'meta' => $meta);
 	}
@@ -407,8 +404,9 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 		$mappings = $this->getMappings();
 		if(empty($mappings)) return;
 
-		$flags = 'su'; // dot matches newlines (skip-tag blocks/comments) + unicode
-		if(!$this->caseSensitive) $flags .= 'i';
+		// dot matches newlines (skip-tag blocks/comments) + unicode; case
+		// sensitivity is per row, applied via inline (?i:…) in buildPattern()
+		$flags = 'su';
 
 		$appends = array();
 		$wraps = array();
@@ -432,10 +430,9 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 
 		$built = $this->buildPattern($entries, $flags);
 		$meta = $built['meta'];
-		$firstOnly = (bool) $this->firstOnly;
 		$seen = array();
 
-		$str = preg_replace_callback($built['pattern'], function($m) use ($meta, $firstOnly, &$seen) {
+		$str = preg_replace_callback($built['pattern'], function($m) use ($meta, &$seen) {
 			// protected construct (tag, comment, e-mail, skip block): leave as-is
 			if(isset($m['prot']) && $m['prot'] !== '') return $m[0];
 
@@ -457,8 +454,8 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$bare = isset($m['bare']) ? $m['bare'] : '';
 			$dtag = isset($m['dtag']) ? $m['dtag'] : '';
 
-			// "first occurrence only" applies to both operators
-			if($firstOnly) {
+			// per-row "first occurrence only"
+			if($info['first']) {
 				$word = $info['word'];
 				if(isset($seen[$word])) {
 					// later occurrence: do not annotate it again
@@ -498,53 +495,98 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 
 		/** @var InputfieldTextarea $f */
 		$f = $modules->get('InputfieldTextarea');
-		$f->attr('name', 'mappings');
-		$f->attr('value', $data['mappings']);
-		$f->attr('rows', 8);
-		$f->label = $this->_('Mappings');
-		$f->description = $this->_('One mapping per line. Two operators:') . "\n" .
-			$this->_('`word = mark` — append the mark after the word.') . "\n" .
-			$this->_('`word == find | tag` — inside the word, wrap `find` in `tag`.');
-		$f->notes = $this->_('Examples:') . "\n" .
-			"`frameless = ®`\n" .
-			"`Term = 1 | sup`   (" . $this->_('footnote') . ")\n" .
-			"`ProcessWire = (tm) | sup` → `ProcessWire<sup>™</sup>`\n" .
-			"`H2O == 2 | sub` → `H<sub>2</sub>O`\n" .
-			"`m2 == 2 | sup` → `m<sup>2</sup>`\n" .
-			"`frameless == | b` → `<b>frameless</b>`   (" . $this->_('empty = whole word') . ")\n\n" .
-			$this->_('Wrap tags `| tag`:') . " `sub sup b strong i em u s mark small ins del code kbd samp var abbr cite dfn q time`\n\n" .
-			$this->_('Symbol shortcuts:') . " `(c)`/`copyright` → © · `(r)`/`reg` → ® · `(tm)`/`tm` → ™ · `(sm)`/`sm` → ℠";
+		$f->attr('name', 'terms');
+		$f->attr('value', $data['terms']);
+		$f->attr('rows', 6);
+		$f->label = $this->_('Strings');
+		$f->description = $this->_('One search string per line — nothing else. After saving, configure each string in the table below.');
+		$f->notes = $this->_('A string may contain spaces, e.g. "frameless Media".');
 		$inputfields->add($f);
 
-		/** @var InputfieldCheckbox $f */
-		$f = $modules->get('InputfieldCheckbox');
-		$f->attr('name', 'wholeWord');
-		$f->attr('value', 1);
-		if($data['wholeWord']) $f->attr('checked', 'checked');
-		$f->label = $this->_('Match whole words only');
-		$f->description = $this->_('When enabled, only complete words are matched (e.g. "ACME" will not match inside "ACMElabs").');
-		$f->columnWidth = 33;
-		$inputfields->add($f);
+		// one row of settings per string (generated from the saved strings)
+		$terms = preg_split('/\r\n|\r|\n/', (string) $data['terms'], -1, PREG_SPLIT_NO_EMPTY);
+		$terms = array_values(array_unique(array_filter(array_map('trim', $terms), 'strlen')));
 
-		/** @var InputfieldCheckbox $f */
-		$f = $modules->get('InputfieldCheckbox');
-		$f->attr('name', 'caseSensitive');
-		$f->attr('value', 1);
-		if($data['caseSensitive']) $f->attr('checked', 'checked');
-		$f->label = $this->_('Case sensitive');
-		$f->description = $this->_('When enabled, "acme" and "ACME" are treated as different words.');
-		$f->columnWidth = 34;
-		$inputfields->add($f);
+		/** @var InputfieldFieldset $table */
+		$table = $modules->get('InputfieldFieldset');
+		$table->label = $this->_('Per-string settings');
 
-		/** @var InputfieldCheckbox $f */
-		$f = $modules->get('InputfieldCheckbox');
-		$f->attr('name', 'firstOnly');
-		$f->attr('value', 1);
-		if($data['firstOnly']) $f->attr('checked', 'checked');
-		$f->label = $this->_('First occurrence only');
-		$f->description = $this->_('When enabled, the mark is placed on the first occurrence of each word per field value, and removed from all later occurrences.');
-		$f->columnWidth = 33;
-		$inputfields->add($f);
+		if(empty($terms)) {
+			/** @var InputfieldMarkup $note */
+			$note = $modules->get('InputfieldMarkup');
+			$note->value = '<p>' . $this->_('Add one or more strings above and save to configure them here.') . '</p>';
+			$table->add($note);
+		}
+
+		foreach($terms as $term) {
+			$key = $this->rowKey($term);
+			$saved = isset($data["op_$key"]);
+
+			/** @var InputfieldFieldset $row */
+			$row = $modules->get('InputfieldFieldset');
+			$row->label = $term;
+
+			/** @var InputfieldSelect $g */
+			$g = $modules->get('InputfieldSelect');
+			$g->attr('name', "op_$key");
+			$g->addOption('append', $this->_('append after'));
+			$g->addOption('wrap', $this->_('wrap inside'));
+			$g->attr('value', $saved ? $data["op_$key"] : 'append');
+			$g->label = $this->_('Operation');
+			$g->required = true;
+			$g->columnWidth = 20;
+			$row->add($g);
+
+			/** @var InputfieldText $g */
+			$g = $modules->get('InputfieldText');
+			$g->attr('name', "val_$key");
+			$g->attr('value', $saved && isset($data["val_$key"]) ? $data["val_$key"] : '');
+			$g->label = $this->_('Mark / part');
+			$g->notes = $this->_('append: the mark (®, (r) …). wrap: the part (empty = whole word).');
+			$g->columnWidth = 26;
+			$row->add($g);
+
+			/** @var InputfieldSelect $g */
+			$g = $modules->get('InputfieldSelect');
+			$g->attr('name', "tag_$key");
+			$g->addOption('', $this->_('(none)'));
+			foreach(self::$wrapTags as $t) $g->addOption($t, $t);
+			$g->attr('value', $saved && isset($data["tag_$key"]) ? $data["tag_$key"] : '');
+			$g->label = $this->_('Tag');
+			$g->columnWidth = 18;
+			$row->add($g);
+
+			/** @var InputfieldCheckbox $g */
+			$g = $modules->get('InputfieldCheckbox');
+			$g->attr('name', "whole_$key");
+			$g->attr('value', 1);
+			if($saved ? !empty($data["whole_$key"]) : true) $g->attr('checked', 'checked');
+			$g->label = $this->_('Whole word');
+			$g->columnWidth = 12;
+			$row->add($g);
+
+			/** @var InputfieldCheckbox $g */
+			$g = $modules->get('InputfieldCheckbox');
+			$g->attr('name', "case_$key");
+			$g->attr('value', 1);
+			if($saved ? !empty($data["case_$key"]) : true) $g->attr('checked', 'checked');
+			$g->label = $this->_('Case');
+			$g->columnWidth = 12;
+			$row->add($g);
+
+			/** @var InputfieldCheckbox $g */
+			$g = $modules->get('InputfieldCheckbox');
+			$g->attr('name', "first_$key");
+			$g->attr('value', 1);
+			if($saved && !empty($data["first_$key"])) $g->attr('checked', 'checked');
+			$g->label = $this->_('First only');
+			$g->columnWidth = 12;
+			$row->add($g);
+
+			$table->add($row);
+		}
+
+		$inputfields->add($table);
 
 		/** @var InputfieldText $f */
 		$f = $modules->get('InputfieldText');
