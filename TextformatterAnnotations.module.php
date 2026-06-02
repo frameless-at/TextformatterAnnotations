@@ -28,7 +28,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Annotations',
-			'version' => 125,
+			'version' => 126,
 			'summary' => 'Appends a configurable mark (symbol, footnote, …) to configurable words, or wraps part of a word in an inline tag, during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'asterisk',
@@ -556,7 +556,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$g->attr('placeholder', '(r)');
 			$g->label = $this->_('Mark (append)');
 			$g->showIf = "op_$key!=wrap"; // shown for append + both
-			$g->columnWidth = 14;
+			$g->columnWidth = 18;
 			$row->add($g);
 
 			/** @var InputfieldText $g */
@@ -566,7 +566,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$g->attr('placeholder', $this->_('empty = whole word'));
 			$g->label = $this->_('Part (wrap)');
 			$g->showIf = "op_$key!=append"; // shown for wrap + both
-			$g->columnWidth = 14;
+			$g->columnWidth = 18;
 			$row->add($g);
 
 			/** @var InputfieldSelect $g */
@@ -589,7 +589,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$g->optionColumns = 1; // inline (horizontal) list of options
 			$g->attr('value', $saved ? (array) $data["opts_$key"] : array('whole', 'case'));
 			$g->label = $this->_('Options');
-			$g->columnWidth = 40;
+			$g->columnWidth = 32;
 			$row->add($g);
 
 			$table->add($row);
