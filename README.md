@@ -92,10 +92,11 @@ brand name inside a URL, an `alt` text or a class name is left alone:
   whitespace and an existing `<sup>` wrapper, so `Frameless©`,
   `Frameless<sup>®</sup>` and `Frameless ®` are all recognised and never get
   a second symbol.
-- **Entity forms count as present too.** The named entity (`&reg;`, `&copy;`,
-  `&trade;`) and numeric references (`&#174;`, `&#xAE;`, with leading zeros or
-  either hex case) of the configured symbols are recognised, so
-  `Frameless&reg;` is never turned into `Frameless®&reg;`.
+- **Entity forms count as present too.** The named entity in lower *and* upper
+  case (`&reg;`/`&REG;`, `&copy;`/`&COPY;`, `&trade;`/`&TRADE;`) and numeric
+  references (`&#174;`, `&#xAE;`, with leading zeros or either hex case) of the
+  configured symbols are recognised, so `Frameless&reg;` is never turned into
+  `Frameless®&reg;`.
 - When matching is case-insensitive, the original casing of the matched word
   is preserved.
 - Anything between `<` and `>` is treated as markup. In plain-text fields a

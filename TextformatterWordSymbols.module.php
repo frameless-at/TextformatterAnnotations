@@ -24,7 +24,7 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Word Symbols',
-			'version' => 105,
+			'version' => 106,
 			'summary' => 'Appends configurable symbols (©, ®, ™, ℠ …) to configurable words during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'copyright',
@@ -156,7 +156,12 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 		$named = array('©' => 'copy', '®' => 'reg', '™' => 'trade');
 		$fragments = array();
 
-		if(isset($named[$symbol])) $fragments[] = '&' . $named[$symbol] . ';';
+		if(isset($named[$symbol])) {
+			// HTML5 defines both the lowercase and the all-uppercase legacy form
+			// (&copy; and &COPY;); mixed case like &Copy; is invalid and ignored.
+			$fragments[] = '&' . $named[$symbol] . ';';
+			$fragments[] = '&' . strtoupper($named[$symbol]) . ';';
+		}
 
 		// numeric references only make sense for a single character
 		if(mb_strlen($symbol) === 1) {
