@@ -25,7 +25,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Annotations',
-			'version' => 113,
+			'version' => 114,
 			'summary' => 'Appends a configurable mark (symbol, footnote, …) to configurable words during output formatting, optionally wrapped in <sup>.',
 			'author' => 'frameless Media',
 			'icon' => 'asterisk',
@@ -70,14 +70,17 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	}
 
 	/**
-	 * Parse the configured mappings textarea into an array of [word => symbol]
+	 * Parse the configured mappings textarea into a list of mapping entries
 	 *
-	 * Each non-empty line: `word = symbol`. The symbol may be a literal
-	 * character (©, ®, ™ …) or one of the named shortcuts (see $shortcuts).
-	 * A trailing `| sup` flag wraps that symbol in a <sup> tag, e.g.
-	 * `ProcessWire = (tm) | sup` produces `ProcessWire<sup>™</sup>`.
+	 * Two operators, one mapping per line:
 	 *
-	 * @return array word => array('symbol' => string, 'sup' => bool)
+	 * - `word = mark` (append): append the mark after the word. The mark may be
+	 *   a literal character or a named shortcut (see $shortcuts). A trailing
+	 *   `| sup` flag wraps it in <sup>, e.g. `ProcessWire = (tm) | sup`.
+	 * - `word == find | sub` (wrap): inside the word, wrap occurrences of `find`
+	 *   in a <sub> (or `| sup`) tag, e.g. `H2O == 2 | sub` → `H<sub>2</sub>O`.
+	 *
+	 * @return array list of array('type' => 'append'|'wrap', 'word' => string, …)
 	 *
 	 */
 	protected function getMappings() {
@@ -86,13 +89,32 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 
 		foreach($lines as $line) {
 			$line = trim($line);
-			if($line === '' || strpos($line, '=') === false) continue;
+			if($line === '') continue;
+			$eq = strpos($line, '=');
+			if($eq === false) continue;
 
-			list($word, $rest) = explode('=', $line, 2);
-			$word = trim($word);
-			$rest = trim($rest);
+			// "==" → wrap operator: wrap a substring inside the word
+			if(isset($line[$eq + 1]) && $line[$eq + 1] === '=') {
+				$word = trim(substr($line, 0, $eq));
+				$rest = trim(substr($line, $eq + 2));
+				$tag = 'sub';
+				if(strpos($rest, '|') !== false) {
+					list($find, $flag) = explode('|', $rest, 2);
+					$rest = trim($find);
+					$flag = strtolower(trim($flag));
+					if($flag === 'sup' || $flag === 'sub') $tag = $flag;
+				}
+				$find = $rest;
+				if($word === '' || $find === '') continue;
+				$mappings[] = array('type' => 'wrap', 'word' => $word, 'find' => $find, 'tag' => $tag);
+				continue;
+			}
 
-			// optional trailing flag: `symbol | sup`
+			// "=" → append operator
+			$word = trim(substr($line, 0, $eq));
+			$rest = trim(substr($line, $eq + 1));
+
+			// optional trailing flag: `mark | sup`
 			$sup = false;
 			if(strpos($rest, '|') !== false) {
 				list($sym, $flag) = explode('|', $rest, 2);
@@ -107,7 +129,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$key = strtolower($symbol);
 			if(isset(self::$shortcuts[$key])) $symbol = self::$shortcuts[$key];
 
-			$mappings[$word] = array('symbol' => $symbol, 'sup' => $sup);
+			$mappings[] = array('type' => 'append', 'word' => $word, 'symbol' => $symbol, 'sup' => $sup);
 		}
 
 		return $mappings;
@@ -225,10 +247,12 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	protected function buildPattern(array $mappings, $flags) {
 
 		// Every symbol that counts as "already present": the standard marks
-		// plus all configured symbols. Longest first so a multi-character
+		// plus all configured (append) symbols. Longest first so a multi-char
 		// symbol matches before a substring of it.
 		$known = array('©', '®', '™', '℠');
-		foreach($mappings as $m) $known[] = $m['symbol'];
+		foreach($mappings as $m) {
+			if($m['type'] === 'append') $known[] = $m['symbol'];
+		}
 		$known = array_unique($known);
 		usort($known, function($a, $b) {
 			return mb_strlen($b) - mb_strlen($a);
@@ -247,29 +271,40 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 		// word boundaries that are unicode-aware (\b is not reliable for é, ö …)
 		$before = $this->wholeWord ? '(?<![\p{L}\p{N}_])' : '';
 		$after = $this->wholeWord ? '(?![\p{L}\p{N}_])' : '';
+		$caseFlag = $this->caseSensitive ? '' : 'i';
 
-		// words longest-first so the longest matching phrase wins
-		$words = array_keys($mappings);
-		usort($words, function($a, $b) {
-			return mb_strlen($b) - mb_strlen($a);
+		// entries longest-first (by word) so the longest matching phrase wins
+		$entries = $mappings;
+		usort($entries, function($a, $b) {
+			return mb_strlen($b['word']) - mb_strlen($a['word']);
 		});
 
 		$alts = array();
 		$meta = array();
 		$i = 0;
-		foreach($words as $word) {
-			$m = $mappings[$word];
-			// all spellings of *this* symbol: literal char + its entity forms
-			$ownAlt = preg_quote($m['symbol'], '~');
-			foreach($this->getSymbolEntities($m['symbol']) as $f) $ownAlt .= '|' . $f;
-			$alts[] = '(?<m' . $i . '>' . preg_quote($word, '~') . ')';
-			$meta[$i] = array(
-				'word' => $word,
-				'symbol' => $m['symbol'],
-				'sup' => $m['sup'],
-				// tests whether a captured decoration spelling is *this* symbol
-				'ownTest' => '~^(?:' . $ownAlt . ')$~' . $flags,
-			);
+		foreach($entries as $m) {
+			$alts[] = '(?<m' . $i . '>' . preg_quote($m['word'], '~') . ')';
+			if($m['type'] === 'wrap') {
+				$meta[$i] = array(
+					'type' => 'wrap',
+					'word' => $m['word'],
+					'tag' => $m['tag'],
+					// matches the substring to wrap inside the word
+					'findRe' => '~' . preg_quote($m['find'], '~') . '~u' . $caseFlag,
+				);
+			} else {
+				// all spellings of *this* symbol: literal char + its entity forms
+				$ownAlt = preg_quote($m['symbol'], '~');
+				foreach($this->getSymbolEntities($m['symbol']) as $f) $ownAlt .= '|' . $f;
+				$meta[$i] = array(
+					'type' => 'append',
+					'word' => $m['word'],
+					'symbol' => $m['symbol'],
+					'sup' => $m['sup'],
+					// tests whether a captured decoration spelling is *this* symbol
+					'ownTest' => '~^(?:' . $ownAlt . ')$~' . $flags,
+				);
+			}
 			$i++;
 		}
 
@@ -365,6 +400,17 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			if($info === null) return $m[0];
 
 			$deco = isset($m['deco']) ? $m['deco'] : '';
+
+			if($info['type'] === 'wrap') {
+				// wrap occurrences of the configured substring inside the word;
+				// re-append any captured trailing decoration unchanged. Already
+				// wrapped text never re-matches (the literal word is no longer
+				// contiguous), so this is naturally idempotent.
+				$tag = $info['tag'];
+				$wrapped = preg_replace($info['findRe'], '<' . $tag . '>$0</' . $tag . '>', $w);
+				return $wrapped . $deco;
+			}
+
 			$inner = isset($m['inner']) ? $m['inner'] : '';
 			$bare = isset($m['bare']) ? $m['bare'] : '';
 
@@ -401,14 +447,16 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 		$f->attr('name', 'mappings');
 		$f->attr('value', $data['mappings']);
 		$f->attr('rows', 8);
-		$f->label = $this->_('Word → mark mappings');
-		$f->description = $this->_('One mapping per line in the format `word = mark`. The mark is any text appended after the word — a symbol, a footnote marker, etc. A few symbol shortcuts are available.');
+		$f->label = $this->_('Mappings');
+		$f->description = $this->_('One mapping per line. Two operators:') . "\n" .
+			$this->_('`word = mark` — append the mark after the word.') . "\n" .
+			$this->_('`word == find | sub` — inside the word, wrap `find` in a `<sub>` (or `| sup`) tag.');
 		$f->notes = $this->_('Examples:') . "\n" .
 			"`Frameless = ®`\n" .
 			"`Term = 1 | sup`   (" . $this->_('footnote') . ")\n" .
-			"`ProcessWire = (tm) | sup`\n\n" .
-			$this->_('Add `| sup` to wrap the mark in a superscript tag, e.g.') . "\n" .
-			"`ProcessWire = (tm) | sup` → `ProcessWire<sup>™</sup>`\n\n" .
+			"`ProcessWire = (tm) | sup` → `ProcessWire<sup>™</sup>`\n" .
+			"`H2O == 2 | sub` → `H<sub>2</sub>O`\n" .
+			"`m2 == 2 | sup` → `m<sup>2</sup>`\n\n" .
 			$this->_('Symbol shortcuts:') . " `(c)`/`copyright` → © · `(r)`/`reg` → ® · `(tm)`/`tm` → ™ · `(sm)`/`sm` → ℠";
 		$inputfields->add($f);
 

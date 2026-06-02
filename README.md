@@ -9,6 +9,7 @@ Examples:
 
 - `Frameless = ®` → every `Frameless` becomes `Frameless®`
 - `Term = 1 | sup` → the first `Term` becomes `Term<sup>1</sup>` (footnote)
+- `H2O == 2 | sub` → every `H2O` becomes `H<sub>2</sub>O`
 
 ## Why not Find/Replace?
 
@@ -55,12 +56,20 @@ ProcessWire = (tm)
 MyBrand     = ™
 ```
 
+There are two operators:
+
+- **`word = mark`** — append `mark` after the word.
+- **`word == find | sub`** — inside the word, wrap occurrences of `find` in a
+  `<sub>` tag (use `| sup` for `<sup>`). Example: `H2O == 2 | sub` →
+  `H<sub>2</sub>O`, `m2 == 2 | sup` → `m<sup>2</sup>`. This is naturally
+  idempotent — once wrapped, the literal word no longer matches.
+
 Words may contain spaces, and overlapping definitions are supported: the
 **longest matching phrase wins**. With both `frameless` and `frameless Media`
 defined, `frameless Media` gets its own mark while a standalone `frameless`
 gets the other.
 
-The mark is any text appended after the word. For convenience a few **symbol
+For the append operator, the mark is any text. For convenience a few **symbol
 shortcuts** are recognised:
 
 | Shortcut(s)                     | Symbol |
