@@ -28,7 +28,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Annotations',
-			'version' => 130,
+			'version' => 131,
 			'summary' => 'Appends a configurable mark (symbol, footnote, …) to configurable words, or wraps part of a word in an inline tag, during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'asterisk',
@@ -152,7 +152,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$case = in_array('case', $opts, true);
 			$first = in_array('first', $opts, true);
 
-			// a row may wrap, append, or both — emitting one entry per action
+			// a row may wrap, append, or both: emitting one entry per action
 			if($op === 'wrap' || $op === 'both') {
 				$find = $part === '' ? $term : $part; // empty = whole word
 				$mappings[] = array(
@@ -416,7 +416,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	 *
 	 * Two phases: append mappings first, then wrap mappings on top. Within each
 	 * phase the longest matching word wins. Running appends first lets wrap
-	 * styling layer over an already-marked phrase — e.g. `frameless` is wrapped
+	 * styling layer over an already-marked phrase: e.g. `frameless` is wrapped
 	 * inside an `®`-marked `frameless Media` without breaking the phrase match.
 	 *
 	 * @param string $str
@@ -586,11 +586,11 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 		$inputfields = $this->wire(new InputfieldWrapper());
 		$data = array_merge(self::$defaults, $data);
 
-		// Strings — one search string per line
+		// Strings: one search string per line
 		$f = $this->configField('InputfieldTextarea', 'terms', $this->_('Strings'), 0, $data['terms']);
 		$f->attr('rows', 6);
 		$f->collapsed = Inputfield::collapsedPopulated; // open only while empty
-		$f->description = $this->_('One search string per line — nothing else. After saving, configure each string in the table below.');
+		$f->description = $this->_('One search string per line: nothing else. After saving, configure each string in the table below.');
 		$inputfields->add($f);
 
 		// one row of settings per (unique) string
@@ -615,7 +615,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$row = $modules->get('InputfieldFieldset');
 			// configured rows show a one-line summary (operation + options);
 			// new rows show just the string and open for editing
-			$row->label = $saved ? ($term . '  —  ' . $this->rowSummary($data, $key)) : $term;
+			$row->label = $saved ? ($term . ': ' . $this->rowSummary($data, $key)) : $term;
 			// open only while not yet configured; collapse once saved
 			$row->collapsed = $saved ? Inputfield::collapsedYes : Inputfield::collapsedNo;
 

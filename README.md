@@ -1,8 +1,8 @@
 # Annotations (TextformatterAnnotations)
 
 A ProcessWire Textformatter that automatically appends a configurable **mark**
-to configurable words during output formatting. The mark can be anything —
-a symbol (**©**, **®**, **™**, **℠**), a footnote marker, or any short string —
+to configurable words during output formatting. The mark can be anything (a
+symbol like **©**, **®**, **™**, **℠**, a footnote marker, or any short string)
 and can optionally be wrapped in a `<sup>` tag per mapping.
 
 Each string is configured in a small table (operation, mark/part, tag, and the
@@ -17,22 +17,22 @@ match options). Examples of what it can do:
 
 ProcessWire's [TextformatterFindReplace](https://processwire.com/modules/textformatter-find-replace/)
 is a general find/replace engine (`str_replace` / `preg_replace`) and can also
-append a symbol after a word — if you write and maintain the regex yourself.
+append a symbol after a word, if you write and maintain the regex yourself.
 
 This module is a higher-level, semantic tool for *annotating words*. Its value
 is the robustness layer that a raw find/replace does not give you:
 
-- **HTML-aware** — never touches text inside tags, attributes, comments or
+- **HTML-aware**: never touches text inside tags, attributes, comments or
   configured skip-tags; e-mail addresses are protected.
-- **Idempotent** — never adds a second mark, recognising the literal symbol,
+- **Idempotent**: never adds a second mark, recognising the literal symbol,
   its entity forms (`&copy;`, `&COPY;`, `&#169;`, `&#xA9;`) and an existing
   `<sup>` wrapper.
 - **Normalises** an existing mark to the mapping's wrap setting (wrap/unwrap),
   keeping its spelling.
-- **First occurrence only** that also strips marks from later occurrences —
+- **First occurrence only** that also strips marks from later occurrences,
   useful for footnotes.
 - **Longest match wins** across overlapping, multi-word definitions.
-- **Editor-friendly config** — a per-string settings table, no regex needed.
+- **Editor-friendly config**: a per-string settings table, no regex needed.
 
 Use **Find/Replace** for arbitrary one-off text/markup transforms (domain
 swaps, tag conversion, generic regex). Use **Annotations** for consistent,
@@ -50,7 +50,7 @@ idempotent, HTML-safe symbol/footnote annotation.
 
 Open the module configuration (**Modules → Configure → Annotations**).
 
-1. In **Strings**, enter one search string per line — *nothing else*. A string
+1. In **Strings**, enter one search string per line: *nothing else*. A string
    may contain spaces (e.g. `frameless Media`).
 2. **Save.** A settings row is generated per string under **Per-string
    settings**.
@@ -60,11 +60,11 @@ Open the module configuration (**Modules → Configure → Annotations**).
 
 | Column | Meaning |
 |---|---|
-| **Operation** | `append after` — add a mark after the word. `wrap inside` — wrap part of the word in a tag. `both` — do both (e.g. bold a word *and* append ®). |
-| **Mark (append)** | The mark to add — a symbol, footnote, any text (symbol shortcuts below). Shown for *append* and *both*. |
-| **Part (wrap)** | The part of the word to wrap — **leave empty to wrap the whole word**. Shown for *wrap* and *both*. |
+| **Operation** | `append after`: add a mark after the word. `wrap inside`: wrap part of the word in a tag. `both`: do both (e.g. bold a word *and* append ®). |
+| **Mark (append)** | The mark to add: a symbol, footnote, any text (symbol shortcuts below). Shown for *append* and *both*. |
+| **Part (wrap)** | The part of the word to wrap: **leave empty to wrap the whole word**. Shown for *wrap* and *both*. |
 | **Tag** | The tag to wrap in. *append:* `(none)` = inline, or any tag to wrap the mark. *wrap:* the tag for the part (defaults to `sub`). *both:* styles the wrap; the appended mark stays inline. |
-| **Options** | `Whole word` (complete words only — `cat` won't match in `category`; unicode-aware), `Case` (case-sensitive), `First only` (annotate only the first occurrence). |
+| **Options** | `Whole word` (complete words only: `cat` won't match in `category`; unicode-aware), `Case` (case-sensitive), `First only` (annotate only the first occurrence). |
 
 New rows default to *append, whole word on, case on, first off*. With `both`,
 e.g. `frameless` → `<strong>frameless</strong>®` (wrap whole word in `strong`,
@@ -83,20 +83,20 @@ Allowed wrap tags: `sub`, `sup`, `b`, `strong`, `i`, `em`, `u`, `s`, `mark`,
 | `(tm)`, `tm`, `trademark`       | ™      |
 | `(sm)`, `sm`, `servicemark`     | ℠      |
 
-A single global option remains: **Skip inside these tags** — text inside the
+A single global option remains: **Skip inside these tags**: text inside the
 listed HTML elements (and descendants) is left untouched. Default:
 `code pre script style`. Add `a` if you do not want link text annotated.
 
 ### How rows combine
 
 Append rows are applied first, then wrap rows **layer on top**, so a wrapped
-string also styles inside an appended phrase — with `frameless Media` (append
+string also styles inside an appended phrase. With `frameless Media` (append
 `(r)`) and `frameless` (wrap whole word in `strong`), the text `frameless Media`
 becomes `<strong>frameless</strong> Media®`. Within each phase the **longest
 matching string wins**.
 
-The tag is authoritative — an existing mark is normalised to it, keeping its
-spelling: an append row with a tag wraps a bare mark (and rewraps a different
+The tag is authoritative: an existing mark is normalised to it, keeping its
+spelling. An append row with a tag wraps a bare mark (and rewraps a different
 tag); an append row with `(none)` unwraps an existing wrapper. A *different*
 mark next to the word is never touched.
 
@@ -125,7 +125,7 @@ inside a URL, an `alt` text or a class name is left alone:
   address is left untouched, e.g. with a `frameless` → ® mapping the text
   `info@frameless.at` stays as-is (no `info@frameless®.at`).
 - The formatter never adds a mark twice. If a word is already followed by its
-  mark — tolerating surrounding whitespace and an existing `<sup>` wrapper — it
+  mark (tolerating surrounding whitespace and an existing `<sup>` wrapper), it
   is normalised rather than duplicated.
 - **Symbol entity forms are recognised.** For the symbol shortcuts, the named
   entity in lower *and* upper case (`&reg;`/`&REG;`, `&copy;`/`&COPY;`,
