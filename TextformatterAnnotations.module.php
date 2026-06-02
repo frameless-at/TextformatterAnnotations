@@ -28,7 +28,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Annotations',
-			'version' => 127,
+			'version' => 128,
 			'summary' => 'Appends a configurable mark (symbol, footnote, …) to configurable words, or wraps part of a word in an inline tag, during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'asterisk',
@@ -70,6 +70,24 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 		'sub', 'sup', 'b', 'strong', 'i', 'em', 'u', 's', 'mark', 'small',
 		'ins', 'del', 'code', 'kbd', 'samp', 'var', 'abbr', 'cite', 'dfn', 'q', 'time',
 	);
+
+	/**
+	 * Default match options for a not-yet-configured row
+	 *
+	 */
+	protected static $optsDefault = array('whole', 'case');
+
+	/**
+	 * Split a textarea value into trimmed, non-empty lines
+	 *
+	 * @param string $str
+	 * @return array
+	 *
+	 */
+	protected function splitLines($str) {
+		$lines = preg_split('/\r\n|\r|\n/', (string) $str, -1, PREG_SPLIT_NO_EMPTY);
+		return array_values(array_filter(array_map('trim', $lines), 'strlen'));
+	}
 
 	/**
 	 * Return the flag as a valid wrap tag (lowercased) or null if not allowed
@@ -116,11 +134,8 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	 */
 	protected function getMappings() {
 		$mappings = array();
-		$terms = preg_split('/\r\n|\r|\n/', (string) $this->terms);
 
-		foreach($terms as $term) {
-			$term = trim($term);
-			if($term === '') continue;
+		foreach($this->splitLines($this->terms) as $term) {
 			$key = $this->rowKey($term);
 
 			$saved = $this->get("op_$key") !== null;
@@ -130,12 +145,12 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$part = trim((string) $this->get("part_$key"));
 			$tag = $this->wrapTag((string) $this->get("tag_$key"));
 
-			// match options (one multi-checkbox field per row); new (unsaved)
-			// rows default to whole word + case sensitive on, first-only off
-			$opts = (array) $this->get("opts_$key");
-			$whole = $saved ? in_array('whole', $opts, true) : true;
-			$case = $saved ? in_array('case', $opts, true) : true;
-			$first = $saved ? in_array('first', $opts, true) : false;
+			// match options (one multi-checkbox field per row); a not-yet-saved
+			// row falls back to the defaults (whole word + case on, first off)
+			$opts = $saved ? (array) $this->get("opts_$key") : self::$optsDefault;
+			$whole = in_array('whole', $opts, true);
+			$case = in_array('case', $opts, true);
+			$first = in_array('first', $opts, true);
 
 			// a row may wrap, append, or both — emitting one entry per action
 			if($op === 'wrap' || $op === 'both') {
@@ -489,6 +504,39 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	}
 
 	/**
+	 * Read a saved config value, or a default when it is not present
+	 *
+	 * @param array $data
+	 * @param string $key
+	 * @param mixed $default
+	 * @return mixed
+	 *
+	 */
+	protected function cfg(array $data, $key, $default = '') {
+		return isset($data[$key]) ? $data[$key] : $default;
+	}
+
+	/**
+	 * Create a config Inputfield with the common attributes set
+	 *
+	 * @param string $type Inputfield module name
+	 * @param string $name
+	 * @param string $label
+	 * @param int $columnWidth 0 for full width
+	 * @param mixed $value Value to set, or null to skip
+	 * @return Inputfield
+	 *
+	 */
+	protected function configField($type, $name, $label, $columnWidth = 0, $value = null) {
+		$f = $this->wire()->modules->get($type);
+		$f->attr('name', $name);
+		if($value !== null) $f->attr('value', $value);
+		$f->label = $label;
+		if($columnWidth) $f->columnWidth = $columnWidth;
+		return $f;
+	}
+
+	/**
 	 * Module configuration screen
 	 *
 	 * @param array $data
@@ -501,19 +549,15 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 		$inputfields = $this->wire(new InputfieldWrapper());
 		$data = array_merge(self::$defaults, $data);
 
-		/** @var InputfieldTextarea $f */
-		$f = $modules->get('InputfieldTextarea');
-		$f->attr('name', 'terms');
-		$f->attr('value', $data['terms']);
+		// Strings — one search string per line
+		$f = $this->configField('InputfieldTextarea', 'terms', $this->_('Strings'), 0, $data['terms']);
 		$f->attr('rows', 6);
 		$f->collapsed = Inputfield::collapsedPopulated; // open only while empty
-		$f->label = $this->_('Strings');
 		$f->description = $this->_('One search string per line — nothing else. After saving, configure each string in the table below.');
 		$inputfields->add($f);
 
-		// one row of settings per string (generated from the saved strings)
-		$terms = preg_split('/\r\n|\r|\n/', (string) $data['terms'], -1, PREG_SPLIT_NO_EMPTY);
-		$terms = array_values(array_unique(array_filter(array_map('trim', $terms), 'strlen')));
+		// one row of settings per (unique) string
+		$terms = array_values(array_unique($this->splitLines($data['terms'])));
 
 		/** @var InputfieldFieldset $table */
 		$table = $modules->get('InputfieldFieldset');
@@ -521,7 +565,6 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 		$table->notes = $this->_('Symbol shortcuts (Mark): `(c)`/`copyright` → © · `(r)`/`reg` → ® · `(tm)`/`tm` → ™ · `(sm)`/`sm` → ℠');
 
 		if(empty($terms)) {
-			/** @var InputfieldMarkup $note */
 			$note = $modules->get('InputfieldMarkup');
 			$note->value = '<p>' . $this->_('Add one or more strings above and save to configure them here.') . '</p>';
 			$table->add($note);
@@ -537,59 +580,37 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			// open only while not yet configured; collapse once saved
 			$row->collapsed = $saved ? Inputfield::collapsedYes : Inputfield::collapsedNo;
 
-			/** @var InputfieldSelect $g */
-			$g = $modules->get('InputfieldSelect');
-			$g->attr('name', "op_$key");
+			$g = $this->configField('InputfieldSelect', "op_$key", $this->_('Operation'), 18);
 			$g->addOption('append', $this->_('append after'));
 			$g->addOption('wrap', $this->_('wrap inside'));
 			$g->addOption('both', $this->_('both'));
-			$g->attr('value', $saved ? $data["op_$key"] : 'append');
-			$g->label = $this->_('Operation');
+			$g->attr('value', $this->cfg($data, "op_$key", 'append'));
 			$g->required = true;
-			$g->columnWidth = 18;
 			$row->add($g);
 
-			/** @var InputfieldText $g */
-			$g = $modules->get('InputfieldText');
-			$g->attr('name', "mark_$key");
-			$g->attr('value', $saved && isset($data["mark_$key"]) ? $data["mark_$key"] : '');
+			$g = $this->configField('InputfieldText', "mark_$key", $this->_('Mark (append)'), 22, $this->cfg($data, "mark_$key"));
 			$g->attr('placeholder', '(r)');
-			$g->label = $this->_('Mark (append)');
 			$g->showIf = "op_$key!=wrap"; // shown for append + both
-			$g->columnWidth = 22;
 			$row->add($g);
 
-			/** @var InputfieldText $g */
-			$g = $modules->get('InputfieldText');
-			$g->attr('name', "part_$key");
-			$g->attr('value', $saved && isset($data["part_$key"]) ? $data["part_$key"] : '');
+			$g = $this->configField('InputfieldText', "part_$key", $this->_('Part (wrap)'), 22, $this->cfg($data, "part_$key"));
 			$g->attr('placeholder', $this->_('empty = whole word'));
-			$g->label = $this->_('Part (wrap)');
 			$g->showIf = "op_$key!=append"; // shown for wrap + both
-			$g->columnWidth = 22;
 			$row->add($g);
 
-			/** @var InputfieldSelect $g */
-			$g = $modules->get('InputfieldSelect');
-			$g->attr('name', "tag_$key");
+			$g = $this->configField('InputfieldSelect', "tag_$key", $this->_('Tag'), 14);
 			$g->addOption('', $this->_('(none)'));
 			foreach(self::$wrapTags as $t) $g->addOption($t, $t);
-			$g->attr('value', $saved && isset($data["tag_$key"]) ? $data["tag_$key"] : '');
-			$g->label = $this->_('Tag');
-			$g->columnWidth = 14;
+			$g->attr('value', $this->cfg($data, "tag_$key"));
 			$row->add($g);
 
 			// the three match options as ONE multi-checkbox field (not 3 cells)
-			/** @var InputfieldCheckboxes $g */
-			$g = $modules->get('InputfieldCheckboxes');
-			$g->attr('name', "opts_$key");
+			$g = $this->configField('InputfieldCheckboxes', "opts_$key", $this->_('Options'), 24);
 			$g->addOption('whole', $this->_('Whole word'));
 			$g->addOption('case', $this->_('Case'));
 			$g->addOption('first', $this->_('First only'));
 			$g->optionColumns = 1; // inline (horizontal) list of options
-			$g->attr('value', $saved ? (array) $data["opts_$key"] : array('whole', 'case'));
-			$g->label = $this->_('Options');
-			$g->columnWidth = 24;
+			$g->attr('value', $saved ? (array) $this->cfg($data, "opts_$key", array()) : self::$optsDefault);
 			$row->add($g);
 
 			$table->add($row);
@@ -597,11 +618,8 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 
 		$inputfields->add($table);
 
-		/** @var InputfieldText $f */
-		$f = $modules->get('InputfieldText');
-		$f->attr('name', 'skipTags');
-		$f->attr('value', $data['skipTags']);
-		$f->label = $this->_('Skip inside these tags');
+		// skip-tags (global)
+		$f = $this->configField('InputfieldText', 'skipTags', $this->_('Skip inside these tags'), 0, $data['skipTags']);
 		$f->description = $this->_('Text inside these HTML elements (and their descendants) is left untouched. Separate tag names with spaces or commas.');
 		$f->notes = $this->_('HTML tags, attributes and comments are always protected regardless of this list. Add `a` here if you do not want link text annotated.');
 		$f->placeholder = 'code pre script style';
