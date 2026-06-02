@@ -28,7 +28,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Annotations',
-			'version' => 132,
+			'version' => 133,
 			'summary' => 'Appends a configurable mark (symbol, footnote, …) to configurable words, or wraps part of a word in an inline tag, during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'asterisk',
@@ -564,11 +564,12 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$bits[] = $this->_('append') . " $mark" . ($tag !== '' && $op !== 'both' ? " <$tag>" : '');
 		}
 
+		// list the active options exactly like the checkboxes
 		$opts = (array) $this->cfg($data, "opts_$key", array());
 		$flags = array();
-		if(!in_array('whole', $opts, true)) $flags[] = $this->_('partial');
-		if(!in_array('case', $opts, true)) $flags[] = $this->_('any-case');
-		if(in_array('first', $opts, true)) $flags[] = $this->_('first');
+		if(in_array('whole', $opts, true)) $flags[] = $this->_('Whole word');
+		if(in_array('case', $opts, true)) $flags[] = $this->_('Case');
+		if(in_array('first', $opts, true)) $flags[] = $this->_('First only');
 
 		$summary = $bits ? implode(' + ', $bits) : $this->_('not configured');
 		if($flags) $summary .= '  ·  ' . implode(', ', $flags);
