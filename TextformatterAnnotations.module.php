@@ -28,7 +28,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Annotations',
-			'version' => 122,
+			'version' => 123,
 			'summary' => 'Appends a configurable mark (symbol, footnote, …) to configurable words, or wraps part of a word in an inline tag, during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'asterisk',
@@ -506,6 +506,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 		$f->attr('name', 'terms');
 		$f->attr('value', $data['terms']);
 		$f->attr('rows', 6);
+		$f->collapsed = Inputfield::collapsedPopulated; // open only while empty
 		$f->label = $this->_('Strings');
 		$f->description = $this->_('One search string per line — nothing else. After saving, configure each string in the table below.');
 		$f->notes = $this->_('A string may contain spaces, e.g. "frameless Media".');
@@ -542,6 +543,8 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			/** @var InputfieldFieldset $row */
 			$row = $modules->get('InputfieldFieldset');
 			$row->label = $term;
+			// open only while not yet configured; collapse once saved
+			$row->collapsed = $saved ? Inputfield::collapsedYes : Inputfield::collapsedNo;
 
 			/** @var InputfieldSelect $g */
 			$g = $modules->get('InputfieldSelect');
