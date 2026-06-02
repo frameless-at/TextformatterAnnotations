@@ -7,7 +7,7 @@ and can optionally be wrapped in a `<sup>` tag per mapping.
 
 Examples:
 
-- `Frameless = ®` → every `Frameless` becomes `Frameless®`
+- `frameless = ®` → every `frameless` becomes `frameless®`
 - `Term = 1 | sup` → the first `Term` becomes `Term<sup>1</sup>` (footnote)
 - `H2O == 2 | sub` → every `H2O` becomes `H<sub>2</sub>O`
 
@@ -50,7 +50,7 @@ Open the module configuration (**Modules → Configure → Annotations**) and
 define one mapping per line in the format `word = mark`:
 
 ```
-Frameless   = ®
+frameless   = ®
 Term        = 1 | sup
 ProcessWire = (tm)
 MyBrand     = ™
@@ -59,10 +59,15 @@ MyBrand     = ™
 There are two operators:
 
 - **`word = mark`** — append `mark` after the word.
-- **`word == find | sub`** — inside the word, wrap occurrences of `find` in a
-  `<sub>` tag (use `| sup` for `<sup>`). Example: `H2O == 2 | sub` →
-  `H<sub>2</sub>O`, `m2 == 2 | sup` → `m<sup>2</sup>`. This is naturally
-  idempotent — once wrapped, the literal word no longer matches.
+- **`word == find | tag`** — inside the word, wrap occurrences of `find` in
+  `tag`. Example: `H2O == 2 | sub` → `H<sub>2</sub>O`, `m2 == 2 | sup` →
+  `m<sup>2</sup>`, `ACME == ACME | strong` → `<strong>ACME</strong>`. Naturally
+  idempotent — once wrapped, the literal word no longer matches. Without a tag
+  it defaults to `sub`.
+
+The `| tag` flag (on either operator) accepts any of these inline tags:
+`sub`, `sup`, `b`, `strong`, `i`, `em`, `u`, `s`, `mark`, `small`, `ins`,
+`del`, `code`, `kbd`, `samp`, `var`, `abbr`, `cite`, `dfn`, `q`, `time`.
 
 Words may contain spaces, and overlapping definitions are supported: the
 **longest matching phrase wins**. With both `frameless` and `frameless Media`
@@ -79,10 +84,10 @@ shortcuts** are recognised:
 | `(tm)`, `tm`, `trademark`       | ™      |
 | `(sm)`, `sm`, `servicemark`     | ℠      |
 
-### Superscript (per word)
+### Wrapping the appended mark (per word)
 
-Append `| sup` to a line to wrap the mark in a `<sup>` tag — set per mapping,
-so you can mix superscript and inline marks:
+Append `| tag` to a line to wrap the appended mark in that tag — set per
+mapping, so you can mix wrapped and inline marks:
 
 ```
 Term        = 1 | sup        →  Term<sup>1</sup>
@@ -90,13 +95,13 @@ ProcessWire = (tm) | sup     →  ProcessWire<sup>™</sup>
 ACME        = ©              →  ACME©
 ```
 
-The mapping's wrap setting is authoritative — an existing mark is normalised to
-it, keeping its spelling:
+The mapping's tag is authoritative — an existing mark is normalised to it,
+keeping its spelling:
 
-- **`| sup` mapping:** a bare mark is wrapped — `Frameless&reg;` →
-  `Frameless<sup>&reg;</sup>`.
-- **plain mapping:** an existing `<sup>` wrapper is **unwrapped** —
-  `Frameless<sup>&reg;</sup>` → `Frameless&reg;`.
+- **`| tag` mapping:** a bare mark is wrapped, and a mark wrapped in a
+  *different* tag is rewrapped — `frameless&reg;` → `frameless<sup>&reg;</sup>`.
+- **plain mapping (no tag):** an existing wrapper is **unwrapped** —
+  `frameless<sup>&reg;</sup>` → `frameless&reg;`.
 
 A *different* mark next to the word is never touched.
 
@@ -125,15 +130,15 @@ Replacements are applied to **text content only**. HTML tags, attributes
 inside a URL, an `alt` text or a class name is left alone:
 
 ```html
-<a href="/frameless">Frameless</a>   →  <a href="/frameless">Frameless®</a>
-<img alt="Frameless logo">           →  <img alt="Frameless logo">   (unchanged)
-<code>Frameless</code>               →  <code>Frameless</code>        (unchanged)
+<a href="/frameless">frameless</a>   →  <a href="/frameless">frameless®</a>
+<img alt="frameless logo">           →  <img alt="frameless logo">   (unchanged)
+<code>frameless</code>               →  <code>frameless</code>        (unchanged)
 ```
 
 ## Notes
 
 - **E-mail addresses are protected.** A configured word that is part of an
-  address is left untouched, e.g. with `Frameless = ®` the text
+  address is left untouched, e.g. with `frameless = ®` the text
   `info@frameless.at` stays as-is (no `info@frameless®.at`).
 - The formatter never adds a mark twice. If a word is already followed by its
   mark — tolerating surrounding whitespace and an existing `<sup>` wrapper — it
@@ -141,8 +146,8 @@ inside a URL, an `alt` text or a class name is left alone:
 - **Symbol entity forms are recognised.** For the symbol shortcuts, the named
   entity in lower *and* upper case (`&reg;`/`&REG;`, `&copy;`/`&COPY;`,
   `&trade;`/`&TRADE;`) and numeric references (`&#174;`, `&#xAE;`, with leading
-  zeros or either hex case) count as the symbol, so `Frameless&reg;` is never
-  turned into `Frameless®&reg;`.
+  zeros or either hex case) count as the symbol, so `frameless&reg;` is never
+  turned into `frameless®&reg;`.
 - When matching is case-insensitive, the original casing of the matched word
   is preserved.
 - Anything between `<` and `>` is treated as markup. In plain-text fields a

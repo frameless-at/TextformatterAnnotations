@@ -4,10 +4,12 @@
  * Annotations Textformatter
  *
  * Appends a configurable mark (a symbol, a footnote marker, …) to configurable
- * words when output formatting is applied to a field value. The mark can
- * optionally be wrapped in a <sup> tag per mapping.
+ * words when output formatting is applied to a field value, or wraps part of a
+ * word in an inline tag. The mark/part can optionally be wrapped in a freely
+ * chosen inline tag per mapping.
  *
- * Example: turns "Frameless" into "Frameless®", or "Term" into "Term<sup>1</sup>".
+ * Examples: "frameless" → "frameless®", "Term" → "Term<sup>1</sup>",
+ * "H2O" → "H<sub>2</sub>O".
  *
  * Copyright 2026 by frameless Media
  * Licensed under MIT
@@ -25,8 +27,8 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Annotations',
-			'version' => 114,
-			'summary' => 'Appends a configurable mark (symbol, footnote, …) to configurable words during output formatting, optionally wrapped in <sup>.',
+			'version' => 115,
+			'summary' => 'Appends a configurable mark (symbol, footnote, …) to configurable words, or wraps part of a word in an inline tag, during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'asterisk',
 		);
@@ -62,6 +64,27 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 		'servicemark' => '℠',
 	);
 
+	/**
+	 * Inline HTML tags allowed for wrapping (the `| tag` flag)
+	 *
+	 */
+	protected static $wrapTags = array(
+		'sub', 'sup', 'b', 'strong', 'i', 'em', 'u', 's', 'mark', 'small',
+		'ins', 'del', 'code', 'kbd', 'samp', 'var', 'abbr', 'cite', 'dfn', 'q', 'time',
+	);
+
+	/**
+	 * Return the flag as a valid wrap tag (lowercased) or null if not allowed
+	 *
+	 * @param string $flag
+	 * @return string|null
+	 *
+	 */
+	protected function wrapTag($flag) {
+		$flag = strtolower(trim($flag));
+		return in_array($flag, self::$wrapTags, true) ? $flag : null;
+	}
+
 	public function __construct() {
 		parent::__construct();
 		foreach(self::$defaults as $key => $value) {
@@ -76,9 +99,11 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	 *
 	 * - `word = mark` (append): append the mark after the word. The mark may be
 	 *   a literal character or a named shortcut (see $shortcuts). A trailing
-	 *   `| sup` flag wraps it in <sup>, e.g. `ProcessWire = (tm) | sup`.
-	 * - `word == find | sub` (wrap): inside the word, wrap occurrences of `find`
-	 *   in a <sub> (or `| sup`) tag, e.g. `H2O == 2 | sub` → `H<sub>2</sub>O`.
+	 *   `| tag` flag wraps it in that tag, e.g. `ProcessWire = (tm) | sup`.
+	 * - `word == find | tag` (wrap): inside the word, wrap occurrences of `find`
+	 *   in `tag`, e.g. `H2O == 2 | sub` → `H<sub>2</sub>O`.
+	 *
+	 * The wrap tag is any allowed inline tag (see $wrapTags).
 	 *
 	 * @return array list of array('type' => 'append'|'wrap', 'word' => string, …)
 	 *
@@ -97,12 +122,12 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			if(isset($line[$eq + 1]) && $line[$eq + 1] === '=') {
 				$word = trim(substr($line, 0, $eq));
 				$rest = trim(substr($line, $eq + 2));
-				$tag = 'sub';
+				$tag = 'sub'; // default
 				if(strpos($rest, '|') !== false) {
 					list($find, $flag) = explode('|', $rest, 2);
 					$rest = trim($find);
-					$flag = strtolower(trim($flag));
-					if($flag === 'sup' || $flag === 'sub') $tag = $flag;
+					$valid = $this->wrapTag($flag);
+					if($valid !== null) $tag = $valid;
 				}
 				$find = $rest;
 				if($word === '' || $find === '') continue;
@@ -114,12 +139,12 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$word = trim(substr($line, 0, $eq));
 			$rest = trim(substr($line, $eq + 1));
 
-			// optional trailing flag: `mark | sup`
-			$sup = false;
+			// optional trailing flag: `mark | tag`
+			$tag = null; // null = plain append (no wrapping)
 			if(strpos($rest, '|') !== false) {
 				list($sym, $flag) = explode('|', $rest, 2);
 				$rest = trim($sym);
-				if(strtolower(trim($flag)) === 'sup') $sup = true;
+				$tag = $this->wrapTag($flag);
 			}
 
 			$symbol = $rest;
@@ -129,7 +154,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$key = strtolower($symbol);
 			if(isset(self::$shortcuts[$key])) $symbol = self::$shortcuts[$key];
 
-			$mappings[] = array('type' => 'append', 'word' => $word, 'symbol' => $symbol, 'sup' => $sup);
+			$mappings[] = array('type' => 'append', 'word' => $word, 'symbol' => $symbol, 'tag' => $tag);
 		}
 
 		return $mappings;
@@ -300,7 +325,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 					'type' => 'append',
 					'word' => $m['word'],
 					'symbol' => $m['symbol'],
-					'sup' => $m['sup'],
+					'tag' => $m['tag'],
 					// tests whether a captured decoration spelling is *this* symbol
 					'ownTest' => '~^(?:' . $ownAlt . ')$~' . $flags,
 				);
@@ -308,10 +333,12 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$i++;
 		}
 
-		// optional existing decoration right after the word: any symbol/entity,
-		// bare or wrapped in <sup>; the inner spelling is captured separately so
-		// it can be unwrapped or kept as-is.
-		$deco = '(?<deco>\s*(?:<sup[^>]*>\s*(?<inner>' . $anyAlt . ')\s*</sup>|(?<bare>' . $anyAlt . ')))?';
+		// optional existing decoration right after the word: any known symbol or
+		// entity, bare or wrapped in any allowed inline tag. The wrapper tag name
+		// and the inner spelling are captured so the mark can be normalised to
+		// the mapping's configured tag (or unwrapped).
+		$tagAlt = implode('|', self::$wrapTags);
+		$deco = '(?<deco>\s*(?:<(?<dtag>' . $tagAlt . ')\b[^>]*>\s*(?<inner>' . $anyAlt . ')\s*</\k<dtag>\s*>|(?<bare>' . $anyAlt . ')))?';
 
 		$pattern = '~(?<prot>' . $this->getProtectedPattern() . ')|'
 			. $before . '(?:' . implode('|', $alts) . ')' . $after . $deco . '~' . $flags;
@@ -323,24 +350,25 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	 * Render a matched word with its mark in the configured form
 	 *
 	 * Adds the mark when none follows; otherwise normalises an existing mark of
-	 * *this* symbol to the mapping's wrap setting (wrap a bare one for `| sup`,
-	 * unwrap a <sup> one for a plain mapping), keeping its spelling. A different
-	 * symbol next to the word is left untouched.
+	 * *this* symbol to the mapping's tag (wrap a bare one, rewrap a different
+	 * tag, or unwrap when the mapping has no tag), keeping its spelling. A
+	 * different symbol next to the word is left untouched.
 	 *
 	 * @param string $w Matched word (original casing)
 	 * @param string $deco Captured decoration ('' if none)
-	 * @param string $inner Inner spelling from a <sup> wrapper ('' if not wrapped)
+	 * @param string $inner Inner spelling from a tag wrapper ('' if not wrapped)
 	 * @param string $bare Bare spelling ('' if wrapped or none)
-	 * @param array $info Mapping meta (symbol, sup, ownTest)
+	 * @param string $dtag Wrapper tag name found ('' if not wrapped)
+	 * @param array $info Mapping meta (symbol, tag, ownTest)
 	 * @return string
 	 *
 	 */
-	protected function renderMatch($w, $deco, $inner, $bare, array $info) {
+	protected function renderMatch($w, $deco, $inner, $bare, $dtag, array $info) {
 		$symbol = $info['symbol'];
-		$sup = $info['sup'];
+		$tag = $info['tag']; // string tag, or null for plain append
 
 		if($deco === '') {
-			return $sup ? $w . '<sup>' . $symbol . '</sup>' : $w . $symbol;
+			return $tag === null ? $w . $symbol : $w . '<' . $tag . '>' . $symbol . '</' . $tag . '>';
 		}
 
 		// a symbol/entity already follows; only normalise it if it is this symbol
@@ -348,14 +376,12 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 		if(!preg_match($info['ownTest'], $symText)) return $w . $deco;
 
 		$wrapped = $inner !== '';
-		$decoTrim = ltrim($deco);
-		if($sup) {
-			if($wrapped) return $w . $decoTrim; // already wrapped, keep
-			$spelling = ($decoTrim[0] === '&') ? $decoTrim : $symbol;
-			return $w . '<sup>' . $spelling . '</sup>';
-		}
-		if($wrapped) return $w . $inner; // unwrap, keep spelling
-		return $w . $decoTrim; // already bare, keep
+		$spelling = $wrapped ? $inner : ltrim($deco);
+
+		if($tag === null) return $w . $spelling; // plain: unwrap / keep bare
+		// keep an existing wrapper of the same tag verbatim (preserves attributes)
+		if($wrapped && strcasecmp($dtag, $tag) === 0) return $w . ltrim($deco);
+		return $w . '<' . $tag . '>' . $spelling . '</' . $tag . '>';
 	}
 
 	/**
@@ -413,6 +439,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 
 			$inner = isset($m['inner']) ? $m['inner'] : '';
 			$bare = isset($m['bare']) ? $m['bare'] : '';
+			$dtag = isset($m['dtag']) ? $m['dtag'] : '';
 
 			if($firstOnly) {
 				$word = $info['word'];
@@ -425,7 +452,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 				$seen[$word] = true;
 			}
 
-			return $this->renderMatch($w, $deco, $inner, $bare, $info);
+			return $this->renderMatch($w, $deco, $inner, $bare, $dtag, $info);
 		}, $str);
 	}
 
@@ -450,13 +477,14 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 		$f->label = $this->_('Mappings');
 		$f->description = $this->_('One mapping per line. Two operators:') . "\n" .
 			$this->_('`word = mark` — append the mark after the word.') . "\n" .
-			$this->_('`word == find | sub` — inside the word, wrap `find` in a `<sub>` (or `| sup`) tag.');
+			$this->_('`word == find | tag` — inside the word, wrap `find` in `tag`.');
 		$f->notes = $this->_('Examples:') . "\n" .
-			"`Frameless = ®`\n" .
+			"`frameless = ®`\n" .
 			"`Term = 1 | sup`   (" . $this->_('footnote') . ")\n" .
 			"`ProcessWire = (tm) | sup` → `ProcessWire<sup>™</sup>`\n" .
 			"`H2O == 2 | sub` → `H<sub>2</sub>O`\n" .
 			"`m2 == 2 | sup` → `m<sup>2</sup>`\n\n" .
+			$this->_('Wrap tags `| tag`:') . " `sub sup b strong i em u s mark small ins del code kbd samp var abbr cite dfn q time`\n\n" .
 			$this->_('Symbol shortcuts:') . " `(c)`/`copyright` → © · `(r)`/`reg` → ® · `(tm)`/`tm` → ™ · `(sm)`/`sm` → ℠";
 		$inputfields->add($f);
 
