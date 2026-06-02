@@ -16,27 +16,26 @@ match options). Examples of what it can do:
 ## Why not Find/Replace?
 
 ProcessWire's [TextformatterFindReplace](https://processwire.com/modules/textformatter-find-replace/)
-is a general find/replace engine (`str_replace` / `preg_replace`) and can also
-append a symbol after a word, if you write and maintain the regex yourself.
+is a full regex engine, so to be clear: you *can* do all of this with it. With
+enough PCRE (lookarounds for idempotency, patterns to avoid tags, attributes
+and e-mail addresses, alternations for every entity spelling, and so on) every
+behaviour below is expressible.
 
-This module is a higher-level, semantic tool for *annotating words*. Its value
-is the robustness layer that a raw find/replace does not give you:
+The point of Annotations is not capability, it is who writes and maintains it:
 
-- **HTML-aware**: never touches text inside tags, attributes, comments or
-  configured skip-tags; e-mail addresses are protected.
-- **Idempotent**: never adds a second mark, recognising the literal symbol,
-  its entity forms (`&copy;`, `&COPY;`, `&#169;`, `&#xA9;`) and an existing
-  `<sup>` wrapper.
-- **Normalises** an existing mark to the mapping's wrap setting (wrap/unwrap),
-  keeping its spelling.
-- **First occurrence only** that also strips marks from later occurrences,
-  useful for footnotes.
-- **Longest match wins** across overlapping, multi-word definitions.
-- **Editor-friendly config**: a per-string settings table, no regex needed.
+- **No regex to write or maintain.** The tricky parts (only touch text not
+  markup, do not double an existing `®`/`&reg;`/`<sup>®</sup>`, skip e-mails,
+  longest-match across overlapping phrases, first-occurrence-only) are built in
+  as defaults, not patterns you have to craft and keep correct per term.
+- **Editable by clients.** Configuration is a list of strings plus a small
+  per-string table, so non-technical editors manage it themselves (also under
+  Setup, see below). A page of hand-written regex is not something you hand to
+  a client.
 
-Use **Find/Replace** for arbitrary one-off text/markup transforms (domain
-swaps, tag conversion, generic regex). Use **Annotations** for consistent,
-idempotent, HTML-safe symbol/footnote annotation.
+So: reach for **Find/Replace** when you want arbitrary one-off text/markup
+transforms and are comfortable with regex. Reach for **Annotations** when the
+same annotation rules run on output repeatedly and should be safe for an editor
+to maintain.
 
 ## Installation
 
