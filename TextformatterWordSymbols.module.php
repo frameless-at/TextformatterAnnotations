@@ -24,7 +24,7 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Word Symbols',
-			'version' => 107,
+			'version' => 108,
 			'summary' => 'Appends configurable symbols (©, ®, ™, ℠ …) to configurable words during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'copyright',
@@ -245,6 +245,15 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 		$before = $this->wholeWord ? '(?<![\p{L}\p{N}_])' : '';
 		$after = $this->wholeWord ? '(?![\p{L}\p{N}_])' : '';
 
+		// matches an existing decoration right after a word: any known symbol or
+		// entity, optionally inside a <sup> wrapper. Used both for the plain
+		// dedup guard and to detect already-decorated occurrences (first-only).
+		$presentList = array_map(function($s) {
+			return preg_quote($s, '~');
+		}, $known);
+		if($entityAlt !== '') $presentList[] = $entityAlt;
+		$presentGroup = '(?:<sup[^>]*>\s*)?(?:' . implode('|', $presentList) . ')';
+
 		$protected = $this->getProtectedPattern();
 		$patterns = array();
 
@@ -280,16 +289,15 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 				// symbol or its entity form — optionally after whitespace and/or
 				// inside a <sup> wrapper — so none is ever added twice (handles
 				// "©", "<sup>©</sup>" and "&copy;" / "&#169;" alike).
-				$alt = array_map(function($s) {
-					return preg_quote($s, '~');
-				}, $known);
-				if($entityAlt !== '') $alt[] = $entityAlt;
-				$dupCheck = '(?!\s*(?:<sup[^>]*>\s*)?(?:' . implode('|', $alt) . '))';
+				$dupCheck = '(?!\s*' . $presentGroup . ')';
 				$word_pattern = $before . $quotedWord . $after . $dupCheck;
 			}
 
 			$patterns[$word] = array(
+				// decorate matching words, leaving protected constructs untouched
 				'pattern' => '~(?<prot>' . $protected . ')|' . $word_pattern . '~' . $flags,
+				// matches an *already decorated* occurrence (for first-only counting)
+				'detect' => '~(?<prot>' . $protected . ')|' . $before . $quotedWord . $after . '\s*' . $presentGroup . '~' . $flags,
 				'symbol' => $symbol,
 				'sup' => $m['sup'],
 			);
@@ -321,8 +329,23 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 
 			$symbol = $p['symbol'];
 			$sup = $p['sup'];
-			// -1 = unlimited; 1 = only the first occurrence document-wide
-			$remaining = $this->firstOnly ? 1 : -1;
+
+			// -1 = unlimited. For "first occurrence only" the word may carry the
+			// symbol once in the whole value — so an occurrence that is *already*
+			// decorated in the source counts and suppresses any new decoration.
+			$remaining = -1;
+			if($this->firstOnly) {
+				$remaining = 1;
+				if(preg_match_all($p['detect'], $str, $matches, PREG_SET_ORDER)) {
+					foreach($matches as $mm) {
+						// a match without a "prot" group is an already-decorated word
+						if(!isset($mm['prot']) || $mm['prot'] === '') {
+							$remaining = 0;
+							break;
+						}
+					}
+				}
+			}
 
 			$str = preg_replace_callback($p['pattern'], function($m) use ($symbol, $sup, &$remaining) {
 				// protected construct (tag, comment, e-mail, skip block): leave as-is

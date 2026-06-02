@@ -61,9 +61,11 @@ never touched.
   characters (ö, é, …) are handled correctly.
 - **Case sensitive** – when enabled, `acme` and `ACME` are treated as
   different words.
-- **First occurrence only** – append the symbol only to the first occurrence
-  of each word per field value (counted across the whole value, including
-  across HTML tags).
+- **First occurrence only** – the word carries the symbol at most once per
+  field value. Symbols already present in the source count too: if any
+  occurrence of the word is already decorated (symbol, entity or `<sup>`), no
+  new symbol is added anywhere; otherwise only the first occurrence is
+  decorated. Counted across the whole value, including across HTML tags.
 - **Skip inside these tags** – text inside the listed HTML elements (and their
   descendants) is left untouched. Default: `code pre script style`. Separate
   tag names with spaces or commas. Add `a` if you do not want link text
