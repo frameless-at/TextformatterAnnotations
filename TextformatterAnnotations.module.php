@@ -27,7 +27,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Annotations',
-			'version' => 115,
+			'version' => 116,
 			'summary' => 'Appends a configurable mark (symbol, footnote, …) to configurable words, or wraps part of a word in an inline tag, during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'asterisk',
@@ -426,30 +426,30 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			if($info === null) return $m[0];
 
 			$deco = isset($m['deco']) ? $m['deco'] : '';
-
-			if($info['type'] === 'wrap') {
-				// wrap occurrences of the configured substring inside the word;
-				// re-append any captured trailing decoration unchanged. Already
-				// wrapped text never re-matches (the literal word is no longer
-				// contiguous), so this is naturally idempotent.
-				$tag = $info['tag'];
-				$wrapped = preg_replace($info['findRe'], '<' . $tag . '>$0</' . $tag . '>', $w);
-				return $wrapped . $deco;
-			}
-
 			$inner = isset($m['inner']) ? $m['inner'] : '';
 			$bare = isset($m['bare']) ? $m['bare'] : '';
 			$dtag = isset($m['dtag']) ? $m['dtag'] : '';
 
+			// "first occurrence only" applies to both operators
 			if($firstOnly) {
 				$word = $info['word'];
 				if(isset($seen[$word])) {
-					// later occurrence: strip this symbol, leave a different one
+					// later occurrence: do not annotate it again
+					if($info['type'] === 'wrap') return $w . $deco; // leave it unwrapped
+					// append: strip this symbol, leave a different one
 					if($deco === '') return $w;
 					$symText = $inner !== '' ? $inner : $bare;
 					return preg_match($info['ownTest'], $symText) ? $w : $w . $deco;
 				}
 				$seen[$word] = true;
+			}
+
+			if($info['type'] === 'wrap') {
+				// wrap occurrences of the configured substring inside the word;
+				// re-append any captured trailing decoration unchanged
+				$tag = $info['tag'];
+				$wrapped = preg_replace($info['findRe'], '<' . $tag . '>$0</' . $tag . '>', $w);
+				return $wrapped . $deco;
 			}
 
 			return $this->renderMatch($w, $deco, $inner, $bare, $dtag, $info);

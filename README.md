@@ -112,10 +112,11 @@ A *different* mark next to the word is never touched.
   characters (ö, é, …) are handled correctly.
 - **Case sensitive** – when enabled, `acme` and `ACME` are treated as
   different words.
-- **First occurrence only** – the word carries the mark exactly once, on its
-  first occurrence. That occurrence is annotated (an existing mark there is
-  kept and normalised); every later occurrence has its mark **removed** —
-  including marks already present in the source (`©`, `&copy;`, `<sup>…</sup>`).
+- **First occurrence only** – the word is annotated exactly once, on its first
+  occurrence. For the append operator, that occurrence keeps/normalises its
+  mark while every later occurrence has its mark **removed** (including marks
+  already in the source: `©`, `&copy;`, `<sup>…</sup>`). For the wrap operator,
+  only the first occurrence is wrapped; later occurrences are left unwrapped.
   Useful for footnotes (mark only the first mention). Protected regions
   (attributes, e-mails, skip-tags) are ignored when finding occurrences.
 - **Skip inside these tags** – text inside the listed HTML elements (and their
