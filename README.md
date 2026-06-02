@@ -68,7 +68,11 @@ required.
    settings**.
 3. Configure each row and save again.
 
+![Strings field with one search string per line](images/config-strings.png)
+
 ### Per-string settings (one row per string)
+
+![Per-string settings table](images/config-settings.png)
 
 | Column | Meaning |
 |---|---|
@@ -81,6 +85,11 @@ required.
 New rows default to *append, whole word on, case on, first off*. With `both`,
 e.g. `frameless` → `<strong>frameless</strong>®` (wrap whole word in `strong`,
 append `®`).
+
+Once configured, each row collapses to a one-line summary of its operation and
+options:
+
+![Configured rows collapsed to summaries](images/config-summaries.png)
 
 Allowed wrap tags: `sub`, `sup`, `b`, `strong`, `i`, `em`, `u`, `s`, `mark`,
 `small`, `ins`, `del`, `code`, `kbd`, `samp`, `var`, `abbr`, `cite`, `dfn`,
