@@ -57,7 +57,10 @@ usual way under **Modules > Configure > Annotations**.
 
 ## Configuration
 
-Open the module configuration (**Modules → Configure → Annotations**).
+Open the module configuration (**Modules → Configure → Annotations**). The same
+form is also available under **Setup → Annotations** (`/setup/annotations/`),
+which is reachable with the `annotations-edit` permission, no Modules access
+required.
 
 1. In **Strings**, enter one search string per line: *nothing else*. A string
    may contain spaces (e.g. `frameless Media`).
