@@ -27,7 +27,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Annotations',
-			'version' => 119,
+			'version' => 120,
 			'summary' => 'Appends a configurable mark (symbol, footnote, …) to configurable words, or wraps part of a word in an inline tag, during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'asterisk',
@@ -510,6 +510,14 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 		/** @var InputfieldFieldset $table */
 		$table = $modules->get('InputfieldFieldset');
 		$table->label = $this->_('Per-string settings');
+		$table->description =
+			$this->_('**Operation** — append a mark after the string, or wrap part of it in a tag.') . "\n" .
+			$this->_('**Mark / part** — append: the mark to add; wrap: the part to wrap (empty = whole string).') . "\n" .
+			$this->_('**Tag** — the inline tag to wrap in (append: “(none)” keeps the mark inline).') . "\n" .
+			$this->_('**Whole word / Case / First only** — matching options, individual per string.');
+		$table->notes =
+			$this->_('Symbol shortcuts (Mark): `(c)`/`copyright` → © · `(r)`/`reg` → ® · `(tm)`/`tm` → ™ · `(sm)`/`sm` → ℠') . "\n" .
+			$this->_('Tags:') . ' `sub sup b strong i em u s mark small ins del code kbd samp var abbr cite dfn q time`';
 
 		if(empty($terms)) {
 			/** @var InputfieldMarkup $note */
@@ -541,8 +549,8 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$g = $modules->get('InputfieldText');
 			$g->attr('name', "val_$key");
 			$g->attr('value', $saved && isset($data["val_$key"]) ? $data["val_$key"] : '');
+			$g->attr('placeholder', $this->_('e.g. (r) — wrap: empty = whole word'));
 			$g->label = $this->_('Mark / part');
-			$g->notes = $this->_('append: the mark (®, (r) …). wrap: the part (empty = whole word).');
 			$g->columnWidth = 26;
 			$row->add($g);
 
@@ -556,14 +564,20 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$g->columnWidth = 18;
 			$row->add($g);
 
+			// the three match options grouped in one fieldset (one cell)
+			/** @var InputfieldFieldset $opts */
+			$opts = $modules->get('InputfieldFieldset');
+			$opts->label = $this->_('Options');
+			$opts->columnWidth = 36;
+
 			/** @var InputfieldCheckbox $g */
 			$g = $modules->get('InputfieldCheckbox');
 			$g->attr('name', "whole_$key");
 			$g->attr('value', 1);
 			if($saved ? !empty($data["whole_$key"]) : true) $g->attr('checked', 'checked');
 			$g->label = $this->_('Whole word');
-			$g->columnWidth = 12;
-			$row->add($g);
+			$g->columnWidth = 34;
+			$opts->add($g);
 
 			/** @var InputfieldCheckbox $g */
 			$g = $modules->get('InputfieldCheckbox');
@@ -571,8 +585,8 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$g->attr('value', 1);
 			if($saved ? !empty($data["case_$key"]) : true) $g->attr('checked', 'checked');
 			$g->label = $this->_('Case');
-			$g->columnWidth = 12;
-			$row->add($g);
+			$g->columnWidth = 33;
+			$opts->add($g);
 
 			/** @var InputfieldCheckbox $g */
 			$g = $modules->get('InputfieldCheckbox');
@@ -580,8 +594,10 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$g->attr('value', 1);
 			if($saved && !empty($data["first_$key"])) $g->attr('checked', 'checked');
 			$g->label = $this->_('First only');
-			$g->columnWidth = 12;
-			$row->add($g);
+			$g->columnWidth = 33;
+			$opts->add($g);
+
+			$row->add($opts);
 
 			$table->add($row);
 		}
