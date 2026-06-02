@@ -1,12 +1,13 @@
 <?php namespace ProcessWire;
 
 /**
- * Word Symbols Textformatter
+ * Annotations Textformatter
  *
- * Appends configurable symbols (e.g. ©, ®, ™, ℠) to configurable words
- * when output formatting is applied to a field value.
+ * Appends a configurable mark (a symbol, a footnote marker, …) to configurable
+ * words when output formatting is applied to a field value. The mark can
+ * optionally be wrapped in a <sup> tag per mapping.
  *
- * Example: turns "Frameless" into "Frameless®" wherever it appears.
+ * Example: turns "Frameless" into "Frameless®", or "Term" into "Term<sup>1</sup>".
  *
  * Copyright 2026 by frameless Media
  * Licensed under MIT
@@ -19,15 +20,15 @@
  *
  */
 
-class TextformatterWordSymbols extends Textformatter implements ConfigurableModule {
+class TextformatterAnnotations extends Textformatter implements ConfigurableModule {
 
 	public static function getModuleInfo() {
 		return array(
-			'title' => 'Word Symbols',
-			'version' => 111,
-			'summary' => 'Appends configurable symbols (©, ®, ™, ℠ …) to configurable words during output formatting.',
+			'title' => 'Annotations',
+			'version' => 112,
+			'summary' => 'Appends a configurable mark (symbol, footnote, …) to configurable words during output formatting, optionally wrapped in <sup>.',
 			'author' => 'frameless Media',
-			'icon' => 'copyright',
+			'icon' => 'asterisk',
 		);
 	}
 
@@ -400,15 +401,15 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 		$f->attr('name', 'mappings');
 		$f->attr('value', $data['mappings']);
 		$f->attr('rows', 8);
-		$f->label = $this->_('Word → Symbol mappings');
-		$f->description = $this->_('One mapping per line in the format `word = symbol`. The symbol may be a literal character or a named shortcut.');
+		$f->label = $this->_('Word → mark mappings');
+		$f->description = $this->_('One mapping per line in the format `word = mark`. The mark is any text appended after the word — a symbol, a footnote marker, etc. A few symbol shortcuts are available.');
 		$f->notes = $this->_('Examples:') . "\n" .
 			"`Frameless = ®`\n" .
-			"`ProcessWire = (tm)`\n" .
-			"`ACME = copyright`\n\n" .
-			$this->_('Add `| sup` to render a symbol superscript, e.g.') . "\n" .
+			"`Term = 1 | sup`   (" . $this->_('footnote') . ")\n" .
+			"`ProcessWire = (tm) | sup`\n\n" .
+			$this->_('Add `| sup` to wrap the mark in a superscript tag, e.g.') . "\n" .
 			"`ProcessWire = (tm) | sup` → `ProcessWire<sup>™</sup>`\n\n" .
-			$this->_('Shortcuts:') . " `(c)`/`copyright` → © · `(r)`/`reg` → ® · `(tm)`/`tm` → ™ · `(sm)`/`sm` → ℠";
+			$this->_('Symbol shortcuts:') . " `(c)`/`copyright` → © · `(r)`/`reg` → ® · `(tm)`/`tm` → ™ · `(sm)`/`sm` → ℠";
 		$inputfields->add($f);
 
 		/** @var InputfieldCheckbox $f */
@@ -437,7 +438,7 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 		$f->attr('value', 1);
 		if($data['firstOnly']) $f->attr('checked', 'checked');
 		$f->label = $this->_('First occurrence only');
-		$f->description = $this->_('When enabled, the symbol is only appended to the first occurrence of each word per field value.');
+		$f->description = $this->_('When enabled, the mark is placed on the first occurrence of each word per field value, and removed from all later occurrences.');
 		$f->columnWidth = 33;
 		$inputfields->add($f);
 
@@ -447,7 +448,7 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 		$f->attr('value', $data['skipTags']);
 		$f->label = $this->_('Skip inside these tags');
 		$f->description = $this->_('Text inside these HTML elements (and their descendants) is left untouched. Separate tag names with spaces or commas.');
-		$f->notes = $this->_('HTML tags, attributes and comments are always protected regardless of this list. Add `a` here if you do not want link text decorated.');
+		$f->notes = $this->_('HTML tags, attributes and comments are always protected regardless of this list. Add `a` here if you do not want link text annotated.');
 		$f->placeholder = 'code pre script style';
 		$inputfields->add($f);
 
