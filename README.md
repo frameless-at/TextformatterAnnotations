@@ -48,11 +48,16 @@ Frameless   = ® | sup        →  Frameless<sup>®</sup>
 ACME        = ©              →  ACME©
 ```
 
-For a `| sup` mapping, an occurrence that already carries the **bare** symbol
-(without the wrapper) is upgraded to the superscript form — e.g. an existing
-`Frameless®` becomes `Frameless<sup>®</sup>`. An occurrence that is already
-wrapped in `<sup>` is left as-is, and a *different* symbol next to the word is
-never touched.
+For a `| sup` mapping, an occurrence that already carries the symbol in **any
+spelling** — the literal character or any entity form (`®`, `&reg;`, `&REG;`,
+`&#174;`, `&#xAE;`) — is wrapped into the superscript form, keeping the
+spelling as-is (`Frameless&reg;` → `Frameless<sup>&reg;</sup>`). An occurrence
+already wrapped in `<sup>` is left untouched, and a *different* symbol next to
+the word is never touched.
+
+Wrapping an existing symbol does not add a symbol, so it happens regardless of
+the **First occurrence only** setting; that setting only limits where a *new*
+symbol is added.
 
 ### Options
 

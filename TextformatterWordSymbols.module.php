@@ -24,7 +24,7 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Word Symbols',
-			'version' => 108,
+			'version' => 109,
 			'summary' => 'Appends configurable symbols (©, ®, ™, ℠ …) to configurable words during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'copyright',
@@ -264,10 +264,10 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 			$quotedSymbol = preg_quote($symbol, '~');
 
 			if($m['sup']) {
-				// Superscript mapping. Upgrade a bare occurrence of *this* symbol
-				// to the <sup> form, but leave an existing <sup> wrapper, any
-				// *other* symbol and any entity form untouched (so we never
-				// produce "<sup>®</sup>©" or "<sup>®</sup>&reg;").
+				// Superscript mapping. Wrap a bare occurrence of *this* symbol —
+				// the literal char or any of its entity forms — into the <sup>
+				// form. An existing <sup> wrapper and any *other* symbol/entity
+				// are left untouched (so we never produce "<sup>®</sup>©").
 				$others = array_values(array_filter($known, function($s) use($symbol) {
 					return $s !== $symbol;
 				}));
@@ -277,12 +277,20 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 						return preg_quote($s, '~');
 					}, $others));
 					$guard .= '(?!\s*(?:' . $otherAlt . '))';
+					// other symbols' entity forms must not be touched either
+					$otherEnt = array();
+					foreach($others as $s) {
+						$otherEnt = array_merge($otherEnt, $this->getSymbolEntities($s));
+					}
+					$otherEnt = array_unique($otherEnt);
+					if(!empty($otherEnt)) $guard .= '(?!\s*(?:' . implode('|', $otherEnt) . '))';
 				}
-				if($entityAlt !== '') $guard .= '(?!\s*(?:' . $entityAlt . '))';
-				// word captured in (?<w>…); guards reject sup/other-symbol/entity;
-				// finally an own bare symbol may be absorbed (and replaced by <sup>)
+				// absorb an own bare decoration (literal symbol or own entity);
+				// captured in (?<dec>…) so an entity can be kept as-is, un-normalised
+				$ownAbsorb = array($quotedSymbol);
+				foreach($this->getSymbolEntities($symbol) as $f) $ownAbsorb[] = $f;
 				$word_pattern = $before . '(?<w>' . $quotedWord . ')' . $after
-					. $guard . '(?:\s*' . $quotedSymbol . ')?';
+					. $guard . '(?:\s*(?<dec>' . implode('|', $ownAbsorb) . '))?';
 
 			} else {
 				// Plain mapping. Skip if the word is already followed by any known
@@ -350,7 +358,17 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 			$str = preg_replace_callback($p['pattern'], function($m) use ($symbol, $sup, &$remaining) {
 				// protected construct (tag, comment, e-mail, skip block): leave as-is
 				if(isset($m['prot']) && $m['prot'] !== '') return $m[0];
-				// first-occurrence budget already spent: leave the match unchanged
+
+				// Wrapping an existing symbol into <sup> does not add a symbol, so it
+				// happens regardless of the first-occurrence budget. The absorbed
+				// spelling is kept as-is (no normalising of an entity).
+				$dec = isset($m['dec']) ? $m['dec'] : '';
+				if($sup && $dec !== '') {
+					$inner = $dec[0] === '&' ? $dec : $symbol;
+					return $m['w'] . '<sup>' . $inner . '</sup>';
+				}
+
+				// Adding a symbol to an undecorated word: subject to the budget.
 				if($remaining === 0) return $m[0];
 				if($remaining > 0) $remaining--;
 				return $sup ? $m['w'] . '<sup>' . $symbol . '</sup>' : $m[0] . $symbol;
