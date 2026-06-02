@@ -27,7 +27,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Annotations',
-			'version' => 116,
+			'version' => 117,
 			'summary' => 'Appends a configurable mark (symbol, footnote, …) to configurable words, or wraps part of a word in an inline tag, during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'asterisk',
@@ -101,7 +101,8 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	 *   a literal character or a named shortcut (see $shortcuts). A trailing
 	 *   `| tag` flag wraps it in that tag, e.g. `ProcessWire = (tm) | sup`.
 	 * - `word == find | tag` (wrap): inside the word, wrap occurrences of `find`
-	 *   in `tag`, e.g. `H2O == 2 | sub` → `H<sub>2</sub>O`.
+	 *   in `tag`, e.g. `H2O == 2 | sub` → `H<sub>2</sub>O`. An empty `find`
+	 *   (`word == | tag`) wraps the whole word, e.g. `frameless == | b`.
 	 *
 	 * The wrap tag is any allowed inline tag (see $wrapTags).
 	 *
@@ -130,7 +131,9 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 					if($valid !== null) $tag = $valid;
 				}
 				$find = $rest;
-				if($word === '' || $find === '') continue;
+				if($word === '') continue;
+				// shortcut: empty find ("word== | tag") wraps the whole word
+				if($find === '') $find = $word;
 				$mappings[] = array('type' => 'wrap', 'word' => $word, 'find' => $find, 'tag' => $tag);
 				continue;
 			}
@@ -483,7 +486,8 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			"`Term = 1 | sup`   (" . $this->_('footnote') . ")\n" .
 			"`ProcessWire = (tm) | sup` → `ProcessWire<sup>™</sup>`\n" .
 			"`H2O == 2 | sub` → `H<sub>2</sub>O`\n" .
-			"`m2 == 2 | sup` → `m<sup>2</sup>`\n\n" .
+			"`m2 == 2 | sup` → `m<sup>2</sup>`\n" .
+			"`frameless == | b` → `<b>frameless</b>`   (" . $this->_('empty = whole word') . ")\n\n" .
 			$this->_('Wrap tags `| tag`:') . " `sub sup b strong i em u s mark small ins del code kbd samp var abbr cite dfn q time`\n\n" .
 			$this->_('Symbol shortcuts:') . " `(c)`/`copyright` → © · `(r)`/`reg` → ® · `(tm)`/`tm` → ™ · `(sm)`/`sm` → ℠";
 		$inputfields->add($f);

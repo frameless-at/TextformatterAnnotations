@@ -61,9 +61,9 @@ There are two operators:
 - **`word = mark`** — append `mark` after the word.
 - **`word == find | tag`** — inside the word, wrap occurrences of `find` in
   `tag`. Example: `H2O == 2 | sub` → `H<sub>2</sub>O`, `m2 == 2 | sup` →
-  `m<sup>2</sup>`, `ACME == ACME | strong` → `<strong>ACME</strong>`. Naturally
-  idempotent — once wrapped, the literal word no longer matches. Without a tag
-  it defaults to `sub`.
+  `m<sup>2</sup>`. An **empty `find`** wraps the whole word, so
+  `frameless == | b` → `<b>frameless</b>` (shortcut for
+  `frameless == frameless | b`). Without a tag it defaults to `sub`.
 
 The `| tag` flag (on either operator) accepts any of these inline tags:
 `sub`, `sup`, `b`, `strong`, `i`, `em`, `u`, `s`, `mark`, `small`, `ins`,
