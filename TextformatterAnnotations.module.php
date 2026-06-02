@@ -28,7 +28,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Annotations',
-			'version' => 123,
+			'version' => 124,
 			'summary' => 'Appends a configurable mark (symbol, footnote, …) to configurable words, or wraps part of a word in an inline tag, during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'asterisk',
@@ -509,7 +509,6 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 		$f->collapsed = Inputfield::collapsedPopulated; // open only while empty
 		$f->label = $this->_('Strings');
 		$f->description = $this->_('One search string per line — nothing else. After saving, configure each string in the table below.');
-		$f->notes = $this->_('A string may contain spaces, e.g. "frameless Media".');
 		$inputfields->add($f);
 
 		// one row of settings per string (generated from the saved strings)
@@ -519,15 +518,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 		/** @var InputfieldFieldset $table */
 		$table = $modules->get('InputfieldFieldset');
 		$table->label = $this->_('Per-string settings');
-		$table->description =
-			$this->_('**Operation** — *append* a mark after the string, *wrap* part of it in a tag, or *both*.') . "\n" .
-			$this->_('**Mark (append)** — the mark to add (symbol, footnote, any text).') . "\n" .
-			$this->_('**Part (wrap)** — the part of the string to wrap; empty = the whole string.') . "\n" .
-			$this->_('**Tag** — the tag to wrap in (append: “(none)” keeps the mark inline; for *both* the tag styles the wrap and the mark stays inline).') . "\n" .
-			$this->_('**Whole word / Case / First only** — matching options, individual per string.');
-		$table->notes =
-			$this->_('Symbol shortcuts (Mark): `(c)`/`copyright` → © · `(r)`/`reg` → ® · `(tm)`/`tm` → ™ · `(sm)`/`sm` → ℠') . "\n" .
-			$this->_('Tags:') . ' `sub sup b strong i em u s mark small ins del code kbd samp var abbr cite dfn q time`';
+		$table->notes = $this->_('Symbol shortcuts (Mark): `(c)`/`copyright` → © · `(r)`/`reg` → ® · `(tm)`/`tm` → ™ · `(sm)`/`sm` → ℠');
 
 		if(empty($terms)) {
 			/** @var InputfieldMarkup $note */
@@ -562,7 +553,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$g = $modules->get('InputfieldText');
 			$g->attr('name', "mark_$key");
 			$g->attr('value', $saved && isset($data["mark_$key"]) ? $data["mark_$key"] : '');
-			$g->attr('placeholder', $this->_('e.g. ®  ·  (r)  ·  1'));
+			$g->attr('placeholder', '(r)');
 			$g->label = $this->_('Mark (append)');
 			$g->showIf = "op_$key!=wrap"; // shown for append + both
 			$g->columnWidth = 22;
@@ -572,7 +563,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$g = $modules->get('InputfieldText');
 			$g->attr('name', "part_$key");
 			$g->attr('value', $saved && isset($data["part_$key"]) ? $data["part_$key"] : '');
-			$g->attr('placeholder', $this->_('empty = whole word  ·  e.g. 2'));
+			$g->attr('placeholder', $this->_('empty = whole word'));
 			$g->label = $this->_('Part (wrap)');
 			$g->showIf = "op_$key!=append"; // shown for wrap + both
 			$g->columnWidth = 22;
@@ -595,6 +586,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$g->addOption('whole', $this->_('Whole word'));
 			$g->addOption('case', $this->_('Case'));
 			$g->addOption('first', $this->_('First only'));
+			$g->optionColumns = 1; // inline (horizontal) list of options
 			$g->attr('value', $saved ? (array) $data["opts_$key"] : array('whole', 'case'));
 			$g->label = $this->_('Options');
 			$g->columnWidth = 24;
