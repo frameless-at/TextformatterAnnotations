@@ -27,7 +27,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Annotations',
-			'version' => 117,
+			'version' => 118,
 			'summary' => 'Appends a configurable mark (symbol, footnote, …) to configurable words, or wraps part of a word in an inline tag, during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'asterisk',
@@ -392,8 +392,12 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	 *
 	 * Replacements are applied to text content only: HTML tags, attributes,
 	 * comments and e-mail addresses are never modified, and the content of
-	 * configured skip-tags (e.g. code, pre) is left untouched. The whole value
-	 * is processed in a single pass; the longest matching word wins.
+	 * configured skip-tags (e.g. code, pre) is left untouched.
+	 *
+	 * Two phases: append mappings first, then wrap mappings on top. Within each
+	 * phase the longest matching word wins. Running appends first lets wrap
+	 * styling layer over an already-marked phrase — e.g. `frameless` is wrapped
+	 * inside an `®`-marked `frameless Media` without breaking the phrase match.
 	 *
 	 * @param string $str
 	 *
@@ -406,7 +410,27 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 		$flags = 'su'; // dot matches newlines (skip-tag blocks/comments) + unicode
 		if(!$this->caseSensitive) $flags .= 'i';
 
-		$built = $this->buildPattern($mappings, $flags);
+		$appends = array();
+		$wraps = array();
+		foreach($mappings as $m) {
+			if($m['type'] === 'wrap') $wraps[] = $m; else $appends[] = $m;
+		}
+
+		if(!empty($appends)) $this->applyPass($str, $appends, $flags);
+		if(!empty($wraps)) $this->applyPass($str, $wraps, $flags);
+	}
+
+	/**
+	 * Apply one phase (a set of same-kind mappings) in a single combined pass
+	 *
+	 * @param string $str Modified by reference
+	 * @param array $entries Mapping entries (all append, or all wrap)
+	 * @param string $flags Regex modifiers
+	 *
+	 */
+	protected function applyPass(&$str, array $entries, $flags) {
+
+		$built = $this->buildPattern($entries, $flags);
 		$meta = $built['meta'];
 		$firstOnly = (bool) $this->firstOnly;
 		$seen = array();

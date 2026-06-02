@@ -69,10 +69,13 @@ The `| tag` flag (on either operator) accepts any of these inline tags:
 `sub`, `sup`, `b`, `strong`, `i`, `em`, `u`, `s`, `mark`, `small`, `ins`,
 `del`, `code`, `kbd`, `samp`, `var`, `abbr`, `cite`, `dfn`, `q`, `time`.
 
-Words may contain spaces, and overlapping definitions are supported: the
-**longest matching phrase wins**. With both `frameless` and `frameless Media`
-defined, `frameless Media` gets its own mark while a standalone `frameless`
-gets the other.
+Words may contain spaces, and overlapping definitions are supported.
+Append mappings are applied first, then wrap mappings **layer on top**, so a
+wrapped word also styles inside an appended phrase — e.g. with
+`frameless Media = (r)` and `frameless == | strong`, the text `frameless Media`
+becomes `<strong>frameless</strong> Media®`. Within each phase the **longest
+matching phrase wins** (so two appends like `frameless` and `frameless Media`
+don't both fire on the phrase).
 
 For the append operator, the mark is any text. For convenience a few **symbol
 shortcuts** are recognised:
