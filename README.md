@@ -32,10 +32,11 @@ The point of Annotations is not capability, it is who writes and maintains it:
   Setup, see below). A page of hand-written regex is not something you hand to
   a client.
 
-So: reach for **Find/Replace** when you want arbitrary one-off text/markup
-transforms and are comfortable with regex. Reach for **Annotations** when the
-same annotation rules run on output repeatedly and should be safe for an editor
-to maintain.
+Both are output textformatters that run on every render, and capability-wise
+Find/Replace is a superset. The choice is only this: use **Find/Replace** if you
+are comfortable writing and maintaining the regex, use **Annotations** if you
+want this annotation job as ready-made, no-regex defaults that a client can
+edit.
 
 ## Installation
 
