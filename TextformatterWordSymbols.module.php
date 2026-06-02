@@ -24,7 +24,7 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Word Symbols',
-			'version' => 106,
+			'version' => 107,
 			'summary' => 'Appends configurable symbols (©, ®, ™, ℠ …) to configurable words during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'copyright',
@@ -182,11 +182,42 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 	}
 
 	/**
-	 * Build one regex pattern + replacement callback per mapping
+	 * Build the alternation of "protected" constructs that must pass through
+	 * unchanged: HTML comments, skip-tag blocks, any other tag, and e-mails.
+	 *
+	 * Matched first in each pattern (as a leading alternative) so that the
+	 * regex engine consumes whole tags/addresses and never starts a word
+	 * match inside an attribute, a tag, or an e-mail address. Returned as a
+	 * regex fragment using the "~" delimiter (so literal "/" in closing tags
+	 * needs no escaping).
+	 *
+	 * @return string
+	 *
+	 */
+	protected function getProtectedPattern() {
+		$alts = array('<!--.*?-->'); // HTML comments
+		// whole skip-tag blocks (content protected), tag name case-insensitive
+		foreach($this->getSkipTags() as $tag) {
+			$tag = preg_quote($tag, '~');
+			$alts[] = '<(?i:' . $tag . ')\b[^>]*>.*?</(?i:' . $tag . ')\s*>';
+		}
+		$alts[] = '<[^>]+>'; // any other tag
+		$alts[] = '[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}'; // e-mail
+		return implode('|', $alts);
+	}
+
+	/**
+	 * Build one regex pattern per mapping
+	 *
+	 * Each pattern is `(?<prot>protected)|word(+guards)` so a single pass over
+	 * the whole value can decorate matching words while leaving protected
+	 * constructs untouched. Because the value is not split, the dedup guards
+	 * can see what follows a word across tag boundaries (e.g. an existing
+	 * `<sup>©</sup>`).
 	 *
 	 * @param array $mappings Result of getMappings()
 	 * @param string $flags Regex modifiers
-	 * @return array word => array('pattern' => string, 'callback' => callable, 'remaining' => int)
+	 * @return array word => array('pattern' => string, 'symbol' => string, 'sup' => bool)
 	 *
 	 */
 	protected function buildPatterns(array $mappings, $flags) {
@@ -214,13 +245,14 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 		$before = $this->wholeWord ? '(?<![\p{L}\p{N}_])' : '';
 		$after = $this->wholeWord ? '(?![\p{L}\p{N}_])' : '';
 
+		$protected = $this->getProtectedPattern();
 		$patterns = array();
 
 		foreach($mappings as $word => $m) {
 
 			$symbol = $m['symbol'];
-			$quotedWord = preg_quote($word, '/');
-			$quotedSymbol = preg_quote($symbol, '/');
+			$quotedWord = preg_quote($word, '~');
+			$quotedSymbol = preg_quote($symbol, '~');
 
 			if($m['sup']) {
 				// Superscript mapping. Upgrade a bare occurrence of *this* symbol
@@ -233,17 +265,15 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 				$guard = '(?!\s*<sup)';
 				if(!empty($others)) {
 					$otherAlt = implode('|', array_map(function($s) {
-						return preg_quote($s, '/');
+						return preg_quote($s, '~');
 					}, $others));
 					$guard .= '(?!\s*(?:' . $otherAlt . '))';
 				}
 				if($entityAlt !== '') $guard .= '(?!\s*(?:' . $entityAlt . '))';
-				// (word)(boundary)(guards: not sup-wrapped, no other symbol, no entity)(absorb own bare symbol?)
-				$pattern = '/' . $before . '(' . $quotedWord . ')' . $after
-					. $guard . '(?:\s*' . $quotedSymbol . ')?/' . $flags;
-				$callback = function($matches) use ($symbol) {
-					return $matches[1] . '<sup>' . $symbol . '</sup>';
-				};
+				// word captured in (?<w>…); guards reject sup/other-symbol/entity;
+				// finally an own bare symbol may be absorbed (and replaced by <sup>)
+				$word_pattern = $before . '(?<w>' . $quotedWord . ')' . $after
+					. $guard . '(?:\s*' . $quotedSymbol . ')?';
 
 			} else {
 				// Plain mapping. Skip if the word is already followed by any known
@@ -251,21 +281,17 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 				// inside a <sup> wrapper — so none is ever added twice (handles
 				// "©", "<sup>©</sup>" and "&copy;" / "&#169;" alike).
 				$alt = array_map(function($s) {
-					return preg_quote($s, '/');
+					return preg_quote($s, '~');
 				}, $known);
 				if($entityAlt !== '') $alt[] = $entityAlt;
 				$dupCheck = '(?!\s*(?:<sup[^>]*>\s*)?(?:' . implode('|', $alt) . '))';
-				$pattern = '/' . $before . $quotedWord . $after . $dupCheck . '/' . $flags;
-				$callback = function($matches) use ($symbol) {
-					return $matches[0] . $symbol;
-				};
+				$word_pattern = $before . $quotedWord . $after . $dupCheck;
 			}
 
 			$patterns[$word] = array(
-				'pattern' => $pattern,
-				'callback' => $callback,
-				// -1 = unlimited; 1 = only the first occurrence document-wide
-				'remaining' => $this->firstOnly ? 1 : -1,
+				'pattern' => '~(?<prot>' . $protected . ')|' . $word_pattern . '~' . $flags,
+				'symbol' => $symbol,
+				'sup' => $m['sup'],
 			);
 		}
 
@@ -275,9 +301,10 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 	/**
 	 * Apply the symbol substitutions to the given string
 	 *
-	 * Replacements are applied to text content only: HTML tags, attributes and
-	 * comments are never modified, and the content of configured skip-tags
-	 * (e.g. code, pre) is left untouched.
+	 * Replacements are applied to text content only: HTML tags, attributes,
+	 * comments and e-mail addresses are never modified, and the content of
+	 * configured skip-tags (e.g. code, pre) is left untouched. Each mapping is
+	 * applied in a single pass over the whole value.
 	 *
 	 * @param string $str
 	 *
@@ -287,78 +314,25 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 		$mappings = $this->getMappings();
 		if(empty($mappings)) return;
 
-		$flags = 'u'; // unicode
+		$flags = 'su'; // dot matches newlines (skip-tag blocks/comments) + unicode
 		if(!$this->caseSensitive) $flags .= 'i';
 
-		$patterns = $this->buildPatterns($mappings, $flags);
-		$skipTags = $this->getSkipTags();
+		foreach($this->buildPatterns($mappings, $flags) as $word => $p) {
 
-		// Split into markup vs. text tokens so replacements never touch tags,
-		// attributes or HTML comments. With PREG_SPLIT_DELIM_CAPTURE the
-		// captured markup is kept, so even indexes are text and odd are markup.
-		$parts = preg_split('/(<!--.*?-->|<[^>]+>)/s', $str, -1, PREG_SPLIT_DELIM_CAPTURE);
-		$skipDepth = 0;
+			$symbol = $p['symbol'];
+			$sup = $p['sup'];
+			// -1 = unlimited; 1 = only the first occurrence document-wide
+			$remaining = $this->firstOnly ? 1 : -1;
 
-		foreach($parts as $i => $part) {
-
-			if($i % 2 === 1) {
-				// markup token: never modified, but track skip-tag nesting depth
-				if($skipTags && preg_match('/^<\s*(\/?)\s*([a-z0-9]+)/i', $part, $m)) {
-					$tag = strtolower($m[2]);
-					if(in_array($tag, $skipTags)) {
-						if($m[1] === '/') {
-							if($skipDepth > 0) $skipDepth--;
-						} else if(substr($part, -2) !== '/>') {
-							$skipDepth++;
-						}
-					}
-				}
-				continue;
-			}
-
-			// text node — skip if we are inside a skip-tag, or it's empty
-			if($skipDepth > 0 || $parts[$i] === '') continue;
-
-			$parts[$i] = $this->replaceInText($parts[$i], $patterns);
+			$str = preg_replace_callback($p['pattern'], function($m) use ($symbol, $sup, &$remaining) {
+				// protected construct (tag, comment, e-mail, skip block): leave as-is
+				if(isset($m['prot']) && $m['prot'] !== '') return $m[0];
+				// first-occurrence budget already spent: leave the match unchanged
+				if($remaining === 0) return $m[0];
+				if($remaining > 0) $remaining--;
+				return $sup ? $m['w'] . '<sup>' . $symbol . '</sup>' : $m[0] . $symbol;
+			}, $str);
 		}
-
-		$str = implode('', $parts);
-	}
-
-	/**
-	 * Apply the mappings to a plain text segment (no surrounding markup)
-	 *
-	 * E-mail addresses are protected: a configured word that is part of an
-	 * address (e.g. "frameless" in "info@frameless.at") is left untouched.
-	 * The per-mapping "remaining" counts are kept across calls so that
-	 * "first occurrence only" still counts document-wide.
-	 *
-	 * @param string $text
-	 * @param array $patterns Result of buildPatterns(), passed by reference
-	 * @return string
-	 *
-	 */
-	protected function replaceInText($text, array &$patterns) {
-
-		// split out e-mail addresses as protected tokens (odd indexes)
-		$email = '/([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})/';
-		$segments = preg_split($email, $text, -1, PREG_SPLIT_DELIM_CAPTURE);
-
-		foreach($segments as $j => $segment) {
-			if($j % 2 === 1 || $segment === '') continue; // e-mail token or empty
-
-			foreach($patterns as $word => &$p) {
-				if($p['remaining'] === 0) continue;
-				$count = 0;
-				$segments[$j] = preg_replace_callback(
-					$p['pattern'], $p['callback'], $segments[$j], $p['remaining'], $count
-				);
-				if($p['remaining'] > 0) $p['remaining'] -= $count;
-			}
-			unset($p);
-		}
-
-		return implode('', $segments);
 	}
 
 	/**
