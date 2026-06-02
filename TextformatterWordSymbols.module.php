@@ -24,7 +24,7 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Word Symbols',
-			'version' => 109,
+			'version' => 110,
 			'summary' => 'Appends configurable symbols (©, ®, ™, ℠ …) to configurable words during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'copyright',
@@ -263,6 +263,10 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 			$quotedWord = preg_quote($word, '~');
 			$quotedSymbol = preg_quote($symbol, '~');
 
+			// all spellings of *this* symbol: literal char + its entity forms
+			$ownAlt = $quotedSymbol;
+			foreach($this->getSymbolEntities($symbol) as $f) $ownAlt .= '|' . $f;
+
 			if($m['sup']) {
 				// Superscript mapping. Wrap a bare occurrence of *this* symbol —
 				// the literal char or any of its entity forms — into the <sup>
@@ -287,10 +291,8 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 				}
 				// absorb an own bare decoration (literal symbol or own entity);
 				// captured in (?<dec>…) so an entity can be kept as-is, un-normalised
-				$ownAbsorb = array($quotedSymbol);
-				foreach($this->getSymbolEntities($symbol) as $f) $ownAbsorb[] = $f;
 				$word_pattern = $before . '(?<w>' . $quotedWord . ')' . $after
-					. $guard . '(?:\s*(?<dec>' . implode('|', $ownAbsorb) . '))?';
+					. $guard . '(?:\s*(?<dec>' . $ownAlt . '))?';
 
 			} else {
 				// Plain mapping. Skip if the word is already followed by any known
@@ -301,11 +303,17 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 				$word_pattern = $before . $quotedWord . $after . $dupCheck;
 			}
 
+			// first-occurrence-only mode: match every occurrence and capture an
+			// existing own decoration (bare symbol/entity or a <sup> wrapper of it)
+			// so the first occurrence can be (re)decorated and the rest stripped.
+			$deco = '(?<deco>\s*(?:<sup[^>]*>\s*(?:' . $ownAlt . ')\s*</sup>|(?:' . $ownAlt . ')))?';
+			$firstPattern = '~(?<prot>' . $protected . ')|' . $before . '(?<w>' . $quotedWord . ')' . $after . $deco . '~' . $flags;
+
 			$patterns[$word] = array(
 				// decorate matching words, leaving protected constructs untouched
 				'pattern' => '~(?<prot>' . $protected . ')|' . $word_pattern . '~' . $flags,
-				// matches an *already decorated* occurrence (for first-only counting)
-				'detect' => '~(?<prot>' . $protected . ')|' . $before . $quotedWord . $after . '\s*' . $presentGroup . '~' . $flags,
+				// used when "first occurrence only" is on
+				'firstPattern' => $firstPattern,
 				'symbol' => $symbol,
 				'sup' => $m['sup'],
 			);
@@ -338,40 +346,40 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 			$symbol = $p['symbol'];
 			$sup = $p['sup'];
 
-			// -1 = unlimited. For "first occurrence only" the word may carry the
-			// symbol once in the whole value — so an occurrence that is *already*
-			// decorated in the source counts and suppresses any new decoration.
-			$remaining = -1;
 			if($this->firstOnly) {
-				$remaining = 1;
-				if(preg_match_all($p['detect'], $str, $matches, PREG_SET_ORDER)) {
-					foreach($matches as $mm) {
-						// a match without a "prot" group is an already-decorated word
-						if(!isset($mm['prot']) || $mm['prot'] === '') {
-							$remaining = 0;
-							break;
-						}
+				// Exactly one symbol, on the first occurrence: decorate the first
+				// occurrence (keeping an existing spelling) and strip any existing
+				// symbol from all later occurrences.
+				$seen = false;
+				$str = preg_replace_callback($p['firstPattern'], function($m) use ($symbol, $sup, &$seen) {
+					if(isset($m['prot']) && $m['prot'] !== '') return $m[0];
+					$w = $m['w'];
+					$deco = ltrim(isset($m['deco']) ? $m['deco'] : '');
+
+					if($seen) return $w; // later occurrence: strip any existing symbol
+					$seen = true;
+
+					if($deco === '') {
+						// no symbol yet: add one in the configured form
+						return $sup ? $w . '<sup>' . $symbol . '</sup>' : $w . $symbol;
 					}
-				}
+					// already decorated: keep as-is for plain or an existing <sup>;
+					// wrap a bare symbol/entity for sup, keeping its spelling
+					if(!$sup || $deco[0] === '<') return $w . $deco;
+					$inner = $deco[0] === '&' ? $deco : $symbol;
+					return $w . '<sup>' . $inner . '</sup>';
+				}, $str);
+				continue;
 			}
 
-			$str = preg_replace_callback($p['pattern'], function($m) use ($symbol, $sup, &$remaining) {
+			$str = preg_replace_callback($p['pattern'], function($m) use ($symbol, $sup) {
 				// protected construct (tag, comment, e-mail, skip block): leave as-is
 				if(isset($m['prot']) && $m['prot'] !== '') return $m[0];
-
-				// Wrapping an existing symbol into <sup> does not add a symbol, so it
-				// happens regardless of the first-occurrence budget. The absorbed
-				// spelling is kept as-is (no normalising of an entity).
+				if(!$sup) return $m[0] . $symbol;
+				// wrap in <sup>; keep an absorbed entity spelling as-is (no normalising)
 				$dec = isset($m['dec']) ? $m['dec'] : '';
-				if($sup && $dec !== '') {
-					$inner = $dec[0] === '&' ? $dec : $symbol;
-					return $m['w'] . '<sup>' . $inner . '</sup>';
-				}
-
-				// Adding a symbol to an undecorated word: subject to the budget.
-				if($remaining === 0) return $m[0];
-				if($remaining > 0) $remaining--;
-				return $sup ? $m['w'] . '<sup>' . $symbol . '</sup>' : $m[0] . $symbol;
+				$inner = ($dec !== '' && $dec[0] === '&') ? $dec : $symbol;
+				return $m['w'] . '<sup>' . $inner . '</sup>';
 			}, $str);
 		}
 	}

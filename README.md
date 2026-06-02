@@ -66,11 +66,12 @@ symbol is added.
   characters (ö, é, …) are handled correctly.
 - **Case sensitive** – when enabled, `acme` and `ACME` are treated as
   different words.
-- **First occurrence only** – the word carries the symbol at most once per
-  field value. Symbols already present in the source count too: if any
-  occurrence of the word is already decorated (symbol, entity or `<sup>`), no
-  new symbol is added anywhere; otherwise only the first occurrence is
-  decorated. Counted across the whole value, including across HTML tags.
+- **First occurrence only** – the word carries the symbol exactly once, on its
+  first occurrence. The first occurrence is decorated (an existing symbol there
+  is kept, a bare one is wrapped for `| sup`); every later occurrence has its
+  symbol **removed** — including symbols already present in the source (`©`,
+  `&copy;`, `<sup>…</sup>`). Protected regions (attributes, e-mails, skip-tags)
+  are ignored when finding occurrences.
 - **Skip inside these tags** – text inside the listed HTML elements (and their
   descendants) is left untouched. Default: `code pre script style`. Separate
   tag names with spaces or commas. Add `a` if you do not want link text
