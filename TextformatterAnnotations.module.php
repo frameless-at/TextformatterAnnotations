@@ -18,7 +18,8 @@
  * @property string $skipTags
  *
  * Per-string settings are stored under dynamic keys op_<key>, val_<key>,
- * tag_<key>, whole_<key>, case_<key>, first_<key> (key = rowKey(term)).
+ * tag_<key> and opts_<key> (a checkbox array of whole/case/first), where
+ * key = rowKey(term).
  *
  */
 
@@ -27,7 +28,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Annotations',
-			'version' => 120,
+			'version' => 121,
 			'summary' => 'Appends a configurable mark (symbol, footnote, …) to configurable words, or wraps part of a word in an inline tag, during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'asterisk',
@@ -127,10 +128,12 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$val = trim((string) $this->get("val_$key"));
 			$tag = $this->wrapTag((string) $this->get("tag_$key"));
 
-			// new (unsaved) rows: whole word + case sensitive on, first-only off
-			$whole = $saved ? (bool) $this->get("whole_$key") : true;
-			$case = $saved ? (bool) $this->get("case_$key") : true;
-			$first = $saved ? (bool) $this->get("first_$key") : false;
+			// match options (one multi-checkbox field per row); new (unsaved)
+			// rows default to whole word + case sensitive on, first-only off
+			$opts = (array) $this->get("opts_$key");
+			$whole = $saved ? in_array('whole', $opts, true) : true;
+			$case = $saved ? in_array('case', $opts, true) : true;
+			$first = $saved ? in_array('first', $opts, true) : false;
 
 			if($op === 'wrap') {
 				$find = $val === '' ? $term : $val; // empty = whole word
@@ -564,40 +567,17 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 			$g->columnWidth = 18;
 			$row->add($g);
 
-			// the three match options grouped in one fieldset (one cell)
-			/** @var InputfieldFieldset $opts */
-			$opts = $modules->get('InputfieldFieldset');
-			$opts->label = $this->_('Options');
-			$opts->columnWidth = 36;
-
-			/** @var InputfieldCheckbox $g */
-			$g = $modules->get('InputfieldCheckbox');
-			$g->attr('name', "whole_$key");
-			$g->attr('value', 1);
-			if($saved ? !empty($data["whole_$key"]) : true) $g->attr('checked', 'checked');
-			$g->label = $this->_('Whole word');
-			$g->columnWidth = 34;
-			$opts->add($g);
-
-			/** @var InputfieldCheckbox $g */
-			$g = $modules->get('InputfieldCheckbox');
-			$g->attr('name', "case_$key");
-			$g->attr('value', 1);
-			if($saved ? !empty($data["case_$key"]) : true) $g->attr('checked', 'checked');
-			$g->label = $this->_('Case');
-			$g->columnWidth = 33;
-			$opts->add($g);
-
-			/** @var InputfieldCheckbox $g */
-			$g = $modules->get('InputfieldCheckbox');
-			$g->attr('name', "first_$key");
-			$g->attr('value', 1);
-			if($saved && !empty($data["first_$key"])) $g->attr('checked', 'checked');
-			$g->label = $this->_('First only');
-			$g->columnWidth = 33;
-			$opts->add($g);
-
-			$row->add($opts);
+			// the three match options as ONE multi-checkbox field (not 3 cells)
+			/** @var InputfieldCheckboxes $g */
+			$g = $modules->get('InputfieldCheckboxes');
+			$g->attr('name', "opts_$key");
+			$g->addOption('whole', $this->_('Whole word'));
+			$g->addOption('case', $this->_('Case'));
+			$g->addOption('first', $this->_('First only'));
+			$g->attr('value', $saved ? (array) $data["opts_$key"] : array('whole', 'case'));
+			$g->label = $this->_('Options');
+			$g->columnWidth = 36;
+			$row->add($g);
 
 			$table->add($row);
 		}
