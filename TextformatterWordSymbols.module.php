@@ -15,6 +15,7 @@
  * @property int $wholeWord
  * @property int $caseSensitive
  * @property int $firstOnly
+ * @property string $skipTags
  *
  */
 
@@ -23,7 +24,7 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Word Symbols',
-			'version' => 103,
+			'version' => 104,
 			'summary' => 'Appends configurable symbols (©, ®, ™, ℠ …) to configurable words during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'copyright',
@@ -39,6 +40,7 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 		'wholeWord' => 1,
 		'caseSensitive' => 1,
 		'firstOnly' => 0,
+		'skipTags' => 'code pre script style',
 	);
 
 	/**
@@ -111,19 +113,29 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 	}
 
 	/**
-	 * Apply the symbol substitutions to the given string
+	 * Parse the configured skip-tags into a lowercased array of tag names
 	 *
-	 * @param string $str
+	 * Text inside these elements (and their descendants) is left untouched.
+	 *
+	 * @return array
 	 *
 	 */
-	public function format(&$str) {
+	protected function getSkipTags() {
+		$tags = preg_split('/[\s,]+/', strtolower((string) $this->skipTags), -1, PREG_SPLIT_NO_EMPTY);
+		return array_map(function($t) {
+			return trim($t, '<>/');
+		}, $tags);
+	}
 
-		$mappings = $this->getMappings();
-		if(empty($mappings)) return;
-
-		$limit = $this->firstOnly ? 1 : -1;
-		$flags = 'u'; // unicode
-		if(!$this->caseSensitive) $flags .= 'i';
+	/**
+	 * Build one regex pattern + replacement callback per mapping
+	 *
+	 * @param array $mappings Result of getMappings()
+	 * @param string $flags Regex modifiers
+	 * @return array word => array('pattern' => string, 'callback' => callable, 'remaining' => int)
+	 *
+	 */
+	protected function buildPatterns(array $mappings, $flags) {
 
 		// Every symbol that counts as "already present": the standard marks
 		// plus all configured symbols. Longest first so a multi-character
@@ -138,6 +150,8 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 		// word boundaries that are unicode-aware (\b is not reliable for é, ö …)
 		$before = $this->wholeWord ? '(?<![\p{L}\p{N}_])' : '';
 		$after = $this->wholeWord ? '(?![\p{L}\p{N}_])' : '';
+
+		$patterns = array();
 
 		foreach($mappings as $word => $m) {
 
@@ -162,10 +176,9 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 				// (word)(boundary)(not already sup-wrapped)(no other symbol)(absorb own bare symbol?)
 				$pattern = '/' . $before . '(' . $quotedWord . ')' . $after
 					. '(?!\s*<sup)' . $skipOther . '(?:\s*' . $quotedSymbol . ')?/' . $flags;
-
-				$str = preg_replace_callback($pattern, function($matches) use ($symbol) {
+				$callback = function($matches) use ($symbol) {
 					return $matches[1] . '<sup>' . $symbol . '</sup>';
-				}, $str, $limit);
+				};
 
 			} else {
 				// Plain mapping. Skip if the word is already followed by any known
@@ -177,12 +190,82 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 				}, $known));
 				$dupCheck = '(?!\s*(?:<sup[^>]*>\s*)?(?:' . $symbolsAlt . '))';
 				$pattern = '/' . $before . $quotedWord . $after . $dupCheck . '/' . $flags;
-
-				$str = preg_replace_callback($pattern, function($matches) use ($symbol) {
+				$callback = function($matches) use ($symbol) {
 					return $matches[0] . $symbol;
-				}, $str, $limit);
+				};
 			}
+
+			$patterns[$word] = array(
+				'pattern' => $pattern,
+				'callback' => $callback,
+				// -1 = unlimited; 1 = only the first occurrence document-wide
+				'remaining' => $this->firstOnly ? 1 : -1,
+			);
 		}
+
+		return $patterns;
+	}
+
+	/**
+	 * Apply the symbol substitutions to the given string
+	 *
+	 * Replacements are applied to text content only: HTML tags, attributes and
+	 * comments are never modified, and the content of configured skip-tags
+	 * (e.g. code, pre) is left untouched.
+	 *
+	 * @param string $str
+	 *
+	 */
+	public function format(&$str) {
+
+		$mappings = $this->getMappings();
+		if(empty($mappings)) return;
+
+		$flags = 'u'; // unicode
+		if(!$this->caseSensitive) $flags .= 'i';
+
+		$patterns = $this->buildPatterns($mappings, $flags);
+		$skipTags = $this->getSkipTags();
+
+		// Split into markup vs. text tokens so replacements never touch tags,
+		// attributes or HTML comments. With PREG_SPLIT_DELIM_CAPTURE the
+		// captured markup is kept, so even indexes are text and odd are markup.
+		$parts = preg_split('/(<!--.*?-->|<[^>]+>)/s', $str, -1, PREG_SPLIT_DELIM_CAPTURE);
+		$skipDepth = 0;
+
+		foreach($parts as $i => $part) {
+
+			if($i % 2 === 1) {
+				// markup token: never modified, but track skip-tag nesting depth
+				if($skipTags && preg_match('/^<\s*(\/?)\s*([a-z0-9]+)/i', $part, $m)) {
+					$tag = strtolower($m[2]);
+					if(in_array($tag, $skipTags)) {
+						if($m[1] === '/') {
+							if($skipDepth > 0) $skipDepth--;
+						} else if(substr($part, -2) !== '/>') {
+							$skipDepth++;
+						}
+					}
+				}
+				continue;
+			}
+
+			// text node — skip if we are inside a skip-tag, or it's empty
+			if($skipDepth > 0 || $parts[$i] === '') continue;
+
+			// apply each mapping; first-occurrence counts are kept across tokens
+			foreach($patterns as $word => &$p) {
+				if($p['remaining'] === 0) continue;
+				$count = 0;
+				$parts[$i] = preg_replace_callback(
+					$p['pattern'], $p['callback'], $parts[$i], $p['remaining'], $count
+				);
+				if($p['remaining'] > 0) $p['remaining'] -= $count;
+			}
+			unset($p);
+		}
+
+		$str = implode('', $parts);
 	}
 
 	/**
@@ -242,6 +325,16 @@ class TextformatterWordSymbols extends Textformatter implements ConfigurableModu
 		$f->label = $this->_('First occurrence only');
 		$f->description = $this->_('When enabled, the symbol is only appended to the first occurrence of each word per field value.');
 		$f->columnWidth = 33;
+		$inputfields->add($f);
+
+		/** @var InputfieldText $f */
+		$f = $modules->get('InputfieldText');
+		$f->attr('name', 'skipTags');
+		$f->attr('value', $data['skipTags']);
+		$f->label = $this->_('Skip inside these tags');
+		$f->description = $this->_('Text inside these HTML elements (and their descendants) is left untouched. Separate tag names with spaces or commas.');
+		$f->notes = $this->_('HTML tags, attributes and comments are always protected regardless of this list. Add `a` here if you do not want link text decorated.');
+		$f->placeholder = 'code pre script style';
 		$inputfields->add($f);
 
 		return $inputfields;

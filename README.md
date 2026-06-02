@@ -62,7 +62,24 @@ never touched.
 - **Case sensitive** – when enabled, `acme` and `ACME` are treated as
   different words.
 - **First occurrence only** – append the symbol only to the first occurrence
-  of each word per field value.
+  of each word per field value (counted across the whole value, including
+  across HTML tags).
+- **Skip inside these tags** – text inside the listed HTML elements (and their
+  descendants) is left untouched. Default: `code pre script style`. Separate
+  tag names with spaces or commas. Add `a` if you do not want link text
+  decorated.
+
+## HTML-aware
+
+Replacements are applied to **text content only**. HTML tags, attributes
+(`href`, `alt`, `class`, `title`, …) and comments are never modified, so a
+brand name inside a URL, an `alt` text or a class name is left alone:
+
+```html
+<a href="/frameless">Frameless</a>   →  <a href="/frameless">Frameless®</a>
+<img alt="Frameless logo">           →  <img alt="Frameless logo">   (unchanged)
+<code>Frameless</code>               →  <code>Frameless</code>        (unchanged)
+```
 
 ## Notes
 
@@ -74,6 +91,9 @@ never touched.
   a second symbol.
 - When matching is case-insensitive, the original casing of the matched word
   is preserved.
+- Anything between `<` and `>` is treated as markup. In plain-text fields a
+  literal `a < b` may therefore be skipped; on rich-text/HTML fields (the
+  intended use) this is exactly the desired behaviour.
 
 ## License
 
