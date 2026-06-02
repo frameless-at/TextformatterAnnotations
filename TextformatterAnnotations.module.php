@@ -28,7 +28,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Annotations',
-			'version' => 128,
+			'version' => 129,
 			'summary' => 'Appends a configurable mark (symbol, footnote, …) to configurable words, or wraps part of a word in an inline tag, during output formatting.',
 			'author' => 'frameless Media',
 			'icon' => 'asterisk',
@@ -532,8 +532,45 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 		$f->attr('name', $name);
 		if($value !== null) $f->attr('value', $value);
 		$f->label = $label;
-		if($columnWidth) $f->columnWidth = $columnWidth;
+		if($columnWidth) {
+			$f->columnWidth = $columnWidth;
+			$f->themeInputSize = 's'; // compact inputs for the per-row table
+		}
 		return $f;
+	}
+
+	/**
+	 * One-line summary of a configured row, for its collapsed fieldset label
+	 *
+	 * @param array $data
+	 * @param string $key rowKey
+	 * @return string
+	 *
+	 */
+	protected function rowSummary(array $data, $key) {
+		$op = $this->cfg($data, "op_$key", 'append');
+		$mark = trim((string) $this->cfg($data, "mark_$key"));
+		$part = trim((string) $this->cfg($data, "part_$key"));
+		$tag = (string) $this->cfg($data, "tag_$key");
+		$bits = array();
+
+		if($op === 'wrap' || $op === 'both') {
+			$what = $part === '' ? $this->_('whole') : '“' . $part . '”';
+			$bits[] = $this->_('wrap') . " $what <" . ($tag !== '' ? $tag : 'sub') . '>';
+		}
+		if(($op === 'append' || $op === 'both') && $mark !== '') {
+			$bits[] = $this->_('append') . " $mark" . ($tag !== '' && $op !== 'both' ? " <$tag>" : '');
+		}
+
+		$opts = (array) $this->cfg($data, "opts_$key", array());
+		$flags = array();
+		if(!in_array('whole', $opts, true)) $flags[] = $this->_('partial');
+		if(!in_array('case', $opts, true)) $flags[] = $this->_('any-case');
+		if(in_array('first', $opts, true)) $flags[] = $this->_('first');
+
+		$summary = $bits ? implode(' + ', $bits) : $this->_('not configured');
+		if($flags) $summary .= '  ·  ' . implode(', ', $flags);
+		return $summary;
 	}
 
 	/**
@@ -551,7 +588,7 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 
 		// Strings — one search string per line
 		$f = $this->configField('InputfieldTextarea', 'terms', $this->_('Strings'), 0, $data['terms']);
-		$f->attr('rows', 6);
+		$f->attr('rows', 4);
 		$f->collapsed = Inputfield::collapsedPopulated; // open only while empty
 		$f->description = $this->_('One search string per line — nothing else. After saving, configure each string in the table below.');
 		$inputfields->add($f);
@@ -576,9 +613,11 @@ class TextformatterAnnotations extends Textformatter implements ConfigurableModu
 
 			/** @var InputfieldFieldset $row */
 			$row = $modules->get('InputfieldFieldset');
-			$row->label = $term;
-			// open only while not yet configured; collapse once saved
+			// configured rows show a one-line summary and stay collapsed;
+			// new rows show just the string and open for editing
+			$row->label = $saved ? ($term . '  —  ' . $this->rowSummary($data, $key)) : $term;
 			$row->collapsed = $saved ? Inputfield::collapsedYes : Inputfield::collapsedNo;
+			$row->themeBorder = 'none'; // lighter than a boxed card
 
 			$g = $this->configField('InputfieldSelect', "op_$key", $this->_('Operation'), 18);
 			$g->addOption('append', $this->_('append after'));
