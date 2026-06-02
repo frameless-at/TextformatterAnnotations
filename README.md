@@ -10,6 +10,31 @@ Examples:
 - `Frameless = ®` → every `Frameless` becomes `Frameless®`
 - `Term = 1 | sup` → the first `Term` becomes `Term<sup>1</sup>` (footnote)
 
+## Why not Find/Replace?
+
+ProcessWire's [TextformatterFindReplace](https://processwire.com/modules/textformatter-find-replace/)
+is a general find/replace engine (`str_replace` / `preg_replace`) and can also
+append a symbol after a word — if you write and maintain the regex yourself.
+
+This module is a higher-level, semantic tool for *annotating words*. Its value
+is the robustness layer that a raw find/replace does not give you:
+
+- **HTML-aware** — never touches text inside tags, attributes, comments or
+  configured skip-tags; e-mail addresses are protected.
+- **Idempotent** — never adds a second mark, recognising the literal symbol,
+  its entity forms (`&copy;`, `&COPY;`, `&#169;`, `&#xA9;`) and an existing
+  `<sup>` wrapper.
+- **Normalises** an existing mark to the mapping's wrap setting (wrap/unwrap),
+  keeping its spelling.
+- **First occurrence only** that also strips marks from later occurrences —
+  useful for footnotes.
+- **Longest match wins** across overlapping, multi-word definitions.
+- **Editor-friendly config** (`Word = mark | sup`), no regex knowledge needed.
+
+Use **Find/Replace** for arbitrary one-off text/markup transforms (domain
+swaps, tag conversion, generic regex). Use **Annotations** for consistent,
+idempotent, HTML-safe symbol/footnote annotation.
+
 ## Installation
 
 1. Copy the `TextformatterAnnotations` folder into `/site/modules/`.
